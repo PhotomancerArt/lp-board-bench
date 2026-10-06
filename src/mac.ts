@@ -1,6 +1,6 @@
 /**
  * MACs are the registry's key and the lease file's name: uppercase hex pairs
- * joined by colons. Accepts `a0f2…`, `A0-F2-…` and `a0:f2:…`.
+ * joined by colons. Accepts `020000…`, `02-00-…` and `02:00:…`.
  */
 export function normalizeMac(text: string): string | undefined {
   const hex = text.trim().replace(/[:\-.]/g, "").toUpperCase();
