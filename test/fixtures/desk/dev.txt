@@ -1,0 +1,10 @@
+/dev/cu.Bluetooth-Incoming-Port
+/dev/cu.Headphones-1
+/dev/cu.Headphones-2
+/dev/cu.debug-console
+/dev/cu.usbmodem10
+/dev/cu.usbmodem1123201
+/dev/cu.usbmodem112401
+/dev/cu.usbmodem2101
+/dev/cu.usbmodemSN234567892
+/dev/cu.wchusbserial112330

@@ -1,0 +1,42 @@
+Current status for hub 1-1.2.3 [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps]
+  Port 1: 0100 power
+  Port 2: 0103 power enable connect [303a:1001 Espressif USB JTAG/serial debug unit 02:00:00:00:00:02]
+  Port 3: 0103 power enable connect [1a86:7522 USB Serial]
+  Port 4: 0100 power
+Current status for hub 1-2.2.3 [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.10, 4 ports, ppps]
+  Port 1: 02a0 power 5gbps Rx.Detect
+  Port 2: 02a0 power 5gbps Rx.Detect
+  Port 3: 02a0 power 5gbps Rx.Detect
+  Port 4: 02a0 power 5gbps Rx.Detect
+Current status for hub 1-1.2 [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps]
+  Port 1: 0100 power
+  Port 2: 0100 power
+  Port 3: 0503 power highspeed enable connect [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps]
+  Port 4: 0103 power enable connect [303a:1001 Espressif USB JTAG/serial debug unit 02:00:00:00:00:01]
+Current status for hub 1-2.2 [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.10, 4 ports, ppps]
+  Port 1: 02a0 power 5gbps Rx.Detect
+  Port 2: 02a0 power 5gbps Rx.Detect
+  Port 3: 0203 power 5gbps U0 enable connect [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.10, 4 ports, ppps]
+  Port 4: 02a0 power 5gbps Rx.Detect
+Current status for hub 1-1.4 [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 5 ports, ppps]
+  Port 1: 0100 power
+  Port 2: 0100 power
+  Port 3: 0100 power
+  Port 4: 0100 power
+  Port 5: 0507 power highspeed suspend enable connect [2109:8817 VIA Labs, Inc. USB Billboard Device 0000000000000001]
+Current status for hub 1-2.4 [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.20, 4 ports, ppps]
+  Port 1: 02a0 power 5gbps Rx.Detect
+  Port 2: 02a0 power 5gbps Rx.Detect
+  Port 3: 02a0 power 5gbps Rx.Detect
+  Port 4: 0203 power 5gbps U0 enable connect [0bda:8156 Realtek USB 10/100/1G/2.5G LAN 4013000001]
+Current status for hub 1-1 [2109:2822 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 5 ports, ppps]
+  Port 1: 0100 power
+  Port 2: 0503 power highspeed enable connect [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps]
+  Port 3: 0503 power highspeed enable connect [1a86:8095 USB Hub, USB 2.00, 4 ports, ganged]
+  Port 4: 0503 power highspeed enable connect [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 5 ports, ppps]
+  Port 5: 0507 power highspeed suspend enable connect [2109:8822 VIA Labs, Inc. USB Billboard Device]
+Current status for hub 1-2 [2109:0822 VIA Labs, Inc. USB3.1 Hub, USB 3.20, 4 ports, ppps]
+  Port 1: 02a0 power 5gbps Rx.Detect
+  Port 2: 0203 power 5gbps U0 enable connect [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.10, 4 ports, ppps]
+  Port 3: 02a0 power 5gbps Rx.Detect
+  Port 4: 0203 power 5gbps U0 enable connect [2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.20, 4 ports, ppps]

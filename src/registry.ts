@@ -6,6 +6,8 @@
 import { existsSync, readFileSync } from "node:fs";
 
 import { atomicWrite } from "./atomic_write.ts";
+import type { Deps } from "./deps.ts";
+import { withLock } from "./lock.ts";
 import { normalizeMac } from "./mac.ts";
 import { registryPath } from "./paths.ts";
 import { emitBoardTables, type TomlValue } from "./toml_write.ts";
@@ -81,6 +83,16 @@ export function saveRegistry(home: string, boards: Board[]): void {
   problems.push(...duplicates(boards));
   if (problems.length > 0) throw new RegistryError(problems.join("\n"));
   atomicWrite(registryPath(home), emitBoardTables(boards.map(toEntries)));
+}
+
+/** Read, change and write the registry under the desk lock. */
+export function editRegistry<T>(home: string, deps: Deps, edit: (boards: Board[]) => T): T {
+  return withLock(home, deps, () => {
+    const boards = loadRegistry(home);
+    const result = edit(boards);
+    saveRegistry(home, boards);
+    return result;
+  });
 }
 
 /**

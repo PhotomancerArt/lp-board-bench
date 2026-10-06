@@ -1,0 +1,167 @@
+{
+  "SPUSBHostDataType": [
+    {
+      "_name": "USB 3.1 Bus",
+      "_items": [
+        {
+          "_name": "USB3.1 Hub",
+          "USBDeviceKeyProductID": "0x0822",
+          "USBDeviceKeySerialNumber": "Not Provided",
+          "USBDeviceKeyVendorID": "0x2109",
+          "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+          "USBKeyLocationID": "0x01200000",
+          "_items": [
+            {
+              "_name": "USB3.0 Hub",
+              "USBDeviceKeyProductID": "0x0817",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x2109",
+              "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+              "USBKeyLocationID": "0x01240000"
+            },
+            {
+              "_name": "USB3.0 Hub",
+              "USBDeviceKeyProductID": "0x0817",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x2109",
+              "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+              "USBKeyLocationID": "0x01220000",
+              "_items": [
+                {
+                  "_name": "USB3.0 Hub",
+                  "USBDeviceKeyProductID": "0x0817",
+                  "USBDeviceKeySerialNumber": "Not Provided",
+                  "USBDeviceKeyVendorID": "0x2109",
+                  "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+                  "USBKeyLocationID": "0x01223000"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "_name": "USB2.0 Hub",
+          "USBDeviceKeyProductID": "0x2822",
+          "USBDeviceKeySerialNumber": "Not Provided",
+          "USBDeviceKeyVendorID": "0x2109",
+          "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+          "USBKeyLocationID": "0x01100000",
+          "_items": [
+            {
+              "_name": "USB Hub",
+              "USBDeviceKeyProductID": "0x8095",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x1a86",
+              "USBKeyLocationID": "0x01130000",
+              "_items": [
+                {
+                  "_name": "USB BillBoard",
+                  "USBDeviceKeyProductID": "0x0000",
+                  "USBDeviceKeySerialNumber": "SN-FIXTURE",
+                  "USBDeviceKeyVendorID": "0x3679",
+                  "USBDeviceKeyVendorName": "GsCooLink",
+                  "USBKeyLocationID": "0x01134000"
+                }
+              ]
+            },
+            {
+              "_name": "USB2.0 Hub",
+              "USBDeviceKeyProductID": "0x2817",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x2109",
+              "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+              "USBKeyLocationID": "0x01140000",
+              "_items": [
+                {
+                  "_name": "USB Billboard Device",
+                  "USBDeviceKeyProductID": "0x8817",
+                  "USBDeviceKeySerialNumber": "SN-FIXTURE",
+                  "USBDeviceKeyVendorID": "0x2109",
+                  "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+                  "USBKeyLocationID": "0x01145000"
+                }
+              ]
+            },
+            {
+              "_name": "USB Billboard Device",
+              "USBDeviceKeyProductID": "0x8822",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x2109",
+              "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+              "USBKeyLocationID": "0x01150000"
+            },
+            {
+              "_name": "USB2.0 Hub",
+              "USBDeviceKeyProductID": "0x2817",
+              "USBDeviceKeySerialNumber": "Not Provided",
+              "USBDeviceKeyVendorID": "0x2109",
+              "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+              "USBKeyLocationID": "0x01120000",
+              "_items": [
+                {
+                  "_name": "USB2.0 Hub",
+                  "USBDeviceKeyProductID": "0x2817",
+                  "USBDeviceKeySerialNumber": "Not Provided",
+                  "USBDeviceKeyVendorID": "0x2109",
+                  "USBDeviceKeyVendorName": "VIA Labs, Inc.",
+                  "USBKeyLocationID": "0x01123000",
+                  "_items": [
+                    {
+                      "_name": "USB Serial",
+                      "USBDeviceKeyProductID": "0x7522",
+                      "USBDeviceKeySerialNumber": "Not Provided",
+                      "USBDeviceKeyVendorID": "0x1a86",
+                      "USBKeyLocationID": "0x01123300"
+                    },
+                    {
+                      "_name": "USB JTAG/serial debug unit",
+                      "USBDeviceKeyProductID": "0x1001",
+                      "USBDeviceKeySerialNumber": "02:00:00:00:00:02",
+                      "USBDeviceKeyVendorID": "0x303a",
+                      "USBDeviceKeyVendorName": "Espressif",
+                      "USBKeyLocationID": "0x01123200"
+                    }
+                  ]
+                },
+                {
+                  "_name": "USB JTAG/serial debug unit",
+                  "USBDeviceKeyProductID": "0x1001",
+                  "USBDeviceKeySerialNumber": "02:00:00:00:00:01",
+                  "USBDeviceKeyVendorID": "0x303a",
+                  "USBDeviceKeyVendorName": "Espressif",
+                  "USBKeyLocationID": "0x01124000"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "_name": "USB 3.1 Bus",
+      "_items": [
+        {
+          "_name": "USB BillBoard",
+          "USBDeviceKeyProductID": "0x0001",
+          "USBDeviceKeySerialNumber": "SN-FIXTURE",
+          "USBDeviceKeyVendorID": "0x3679",
+          "USBDeviceKeyVendorName": "GsCooLink",
+          "USBKeyLocationID": "0x00100000"
+        }
+      ]
+    },
+    {
+      "_name": "USB 3.1 Bus",
+      "_items": [
+        {
+          "_name": "USB JTAG/serial debug unit",
+          "USBDeviceKeyProductID": "0x1001",
+          "USBDeviceKeySerialNumber": "02:00:00:00:00:03",
+          "USBDeviceKeyVendorID": "0x303a",
+          "USBDeviceKeyVendorName": "Espressif",
+          "USBKeyLocationID": "0x02100000"
+        }
+      ]
+    }
+  ]
+}
