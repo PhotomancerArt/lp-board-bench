@@ -13,6 +13,7 @@ const POLL_MS = 2000;
 let state: State | undefined;
 let clockSkew = 0; // server now − local now, so "min left" agrees with the CLI
 let lastOk = 0;
+let lastKey = "";
 let editing: ViewJson | undefined;
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -26,7 +27,13 @@ async function refresh(): Promise<void> {
     clockSkew = Date.parse(state.now) - Date.now();
     lastOk = Date.now();
     $("problem").replaceChildren();
-    render();
+    // Redraw only when something changed, or the minute did ("12 min left"):
+    // a redraw rebuilds every card under the pointer and refetches pictures.
+    const key = JSON.stringify([state.boards, state.hubsAvailable, Math.floor(Date.parse(state.now) / 60_000)]);
+    if (key !== lastKey) {
+      lastKey = key;
+      render();
+    }
   } catch (err) {
     const banner = el("div", "error-banner", `The bench could not read the desk: ${(err as Error).message}`);
     $("problem").replaceChildren(banner);
@@ -63,7 +70,7 @@ function renderUpdated(): void {
   const updated = $("updated");
   if (!lastOk) return;
   const seconds = Math.round((Date.now() - lastOk) / 1000);
-  updated.textContent = seconds < 3 ? "live" : `last read ${seconds} s ago`;
+  updated.textContent = seconds < 5 ? "live" : `last read ${seconds} s ago`;
   updated.classList.toggle("stale", seconds > 10);
 }
 
@@ -144,8 +151,8 @@ function statusBlock(board: ViewJson): HTMLElement {
   if (lease) {
     const block = el("div", "status used");
     const line1 = el("div", "line1");
-    line1.append(el("span", "dot"), el("span", "", `In use by ${lease.holder}`), el("span", "left", timeLeft(lease.expires)));
-    block.append(line1);
+    line1.append(el("span", "dot"), el("span", "", "In use"), el("span", "left", timeLeft(lease.expires)));
+    block.append(line1, el("div", "who", lease.holder));
     if (lease.purpose) block.append(el("div", "why", lease.purpose));
     return block;
   }
@@ -400,6 +407,10 @@ function toast(text: string, bad = false): void {
   if (toastTimer) clearTimeout(toastTimer);
   toastTimer = setTimeout(() => node.classList.remove("show"), 3500);
 }
+
+// `?theme=light` / `?theme=dark` pins the theme; otherwise the system's.
+const theme = new URLSearchParams(location.search).get("theme");
+if (theme === "light" || theme === "dark") document.documentElement.dataset.theme = theme;
 
 $("drawer-close").onclick = closeEditor;
 $("backdrop").onclick = closeEditor;

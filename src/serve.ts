@@ -22,12 +22,6 @@ import { boardFromInput, editRegistry, RegistryError } from "./registry.ts";
 import { buildState, resolveRef, viewName } from "./state.ts";
 import { stateJson } from "./view_json.ts";
 
-// The page's script as text (typechecked as a module of its own, so it
-// arrives through a dynamic import and a cast). Static path: the compiled
-// binary embeds it.
-const appSource = ((await import("../web/app.ts", { with: { type: "text" } })) as unknown as { default: string })
-  .default;
-
 export const DEFAULT_PORT = 4380;
 /** Who the page acts as: Yona, at the desk. */
 export const PAGE_HOLDER = "yona (page)";
@@ -58,16 +52,17 @@ export async function serve(home: string, desk: Desk, deps: Deps, args: string[]
 
 /** The page's routes, as a plain fetch handler (tests call it directly). */
 export function deskHandler(home: string, desk: Desk, deps: Deps): (request: Request) => Promise<Response> {
-  const app = new Bun.Transpiler({ loader: "ts" }).transformSync(appSource);
   return async (request) => {
     const url = new URL(request.url);
     const path = url.pathname;
     try {
       if (request.method === "GET" && path === "/") {
-        return new Response(indexHtml, { headers: { "content-type": "text/html; charset=utf-8" } });
+        return new Response(indexHtml, { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-cache" } });
       }
       if (request.method === "GET" && path === "/app.js") {
-        return new Response(app, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+        return new Response(await appScript(), {
+          headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-cache" },
+        });
       }
       if (request.method === "GET" && path === "/api/state") {
         const state = buildState(home, desk, deps);
@@ -86,6 +81,21 @@ export function deskHandler(home: string, desk: Desk, deps: Deps): (request: Req
       return json({ error: (err as Error).message }, status);
     }
   };
+}
+
+let appJs: Promise<string> | undefined;
+
+/**
+ * The page's script, as JavaScript. It is typechecked as a module of its own,
+ * so its text arrives through a dynamic import and a cast; the path is
+ * static, so the compiled binary embeds it. Loaded on first request: a
+ * top-level await here does not survive `bun build --compile`.
+ */
+function appScript(): Promise<string> {
+  appJs ??= import("../web/app.ts", { with: { type: "text" } }).then((module) =>
+    new Bun.Transpiler({ loader: "ts" }).transformSync((module as unknown as { default: string }).default),
+  );
+  return appJs;
 }
 
 function pictureResponse(home: string, desk: Desk, deps: Deps, macText: string): Response {
