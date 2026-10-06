@@ -33,6 +33,7 @@ just install        # builds one binary: ~/.local/bin/board
 board list                                       # every board: mark, slug, role, port, hub, holder, the line
 board take fixture-c6 --for "ota-director: power-cut soak"   # 30 min; prints the port
 board take fixture-c6 --for "wifi: scan" --wait  # join the line instead of being refused
+board run fixture-c6 --for "ota: soak" -- ./soak.sh    # hold it for the whole run, + 10 min grace
 board renew fixture-c6 --as ota-director --minutes 60
 board drop fixture-c6 --as ota-director
 board check /dev/cu.usbmodem112401 --as me       # what a flasher asks first (exit codes below)
@@ -51,8 +52,24 @@ by someone else, `4` an art board you have not taken, `5` no such board.
 A registered chip that disagrees with a probe (`--chip`) prints
 `⚠️ MISMATCH` — the warning that would have caught "the C6 on port 1" being an S3.
 
-A lease ends when it expires, when it is dropped, or — if it was taken with
-`--pid N` — when that process dies. Long-running scripts pass their own pid.
+A lease ends when it expires (30 min by default, 4 h at most), when it is
+dropped, or — if it was taken with `--pid N` — when that process dies,
+whichever comes first. There is no grace after the process: the board is free
+the moment it exits.
+
+**For a long run, use `board run`** instead:
+
+```bash
+board run fixture-c6 --for "ota-director: power-cut soak" --grace 15 -- scripts/ota/hw-power-cut.py …
+```
+
+It holds the board for as long as the command runs (renewing every minute, so
+a three-hour soak never expires mid-run), then keeps it yours for the grace
+(default 10 min) so you can look at what the run left behind before anyone in
+line gets it; `board drop` frees it sooner. The command gets `BOARD_HOLDER`
+(so a `just` recipe inside passes its own lease check) and `BOARD_DEV` (the
+board's port). The exit code is the command's. If `board run` itself is
+killed hard, the lease frees at once.
 
 ## The page
 

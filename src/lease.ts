@@ -117,6 +117,32 @@ export function renew(
   });
 }
 
+/**
+ * End a run: the holder keeps the board for `graceMinutes` more, then it frees
+ * itself. Drops the lease's pid, so the run's process ending does not end it.
+ * A grace of 0 drops the lease. Only the holder may.
+ */
+export function settle(
+  home: string,
+  mac: string,
+  who: string,
+  graceMinutes: number,
+  deps: Deps,
+): Lease | undefined {
+  return withLock(home, deps, () => {
+    const current = readLease(home, mac);
+    if (!current || current.holder !== who) return undefined;
+    if (graceMinutes <= 0) {
+      rmSync(leasePath(home, mac), { force: true });
+      return undefined;
+    }
+    const { pid: _pid, ...rest } = current;
+    const lease: Lease = { ...rest, expires: expiry(deps.now(), graceMinutes).toISOString() };
+    atomicWrite(leasePath(home, mac), `${JSON.stringify(lease, null, 2)}\n`);
+    return lease;
+  });
+}
+
 /** Release a lease. Only its holder may, unless `force` (taking it back). */
 export function drop(
   home: string,

@@ -98,6 +98,31 @@ describe("board (CLI over the fixture desk)", () => {
     expect(desk.run("check", "chk", "--as", "yona").code).toBe(0);
   });
 
+  test("run holds the board while the command runs, then keeps it for the grace", () => {
+    const desk = setup();
+    const board = `${process.execPath} ${join(import.meta.dir, "cli.ts")}`;
+    const result = desk.run(
+      "run",
+      "fc6",
+      "--for",
+      "soak: power cuts",
+      "--grace",
+      "5",
+      "--",
+      "sh",
+      "-c",
+      `echo "holder=$BOARD_HOLDER dev=$BOARD_DEV"; ${board} take fc6 --for "other: x" 2>/dev/null; echo "other=$?"; exit 7`,
+    );
+    expect(result.code).toBe(7);
+    expect(result.stdout).toContain("holder=soak dev=/dev/cu.usbmodem112401");
+    expect(result.stdout).toContain("other=3");
+    expect(result.stderr).toMatch(/the run ended \(exit 7\); still yours \(\d+ min left\)/);
+    const lease = JSON.parse(readFileSync(join(desk.home, "leases", "02:00:00:00:00:01.json"), "utf8"));
+    expect(lease.holder).toBe("soak");
+    expect(lease.pid).toBeUndefined();
+    expect(desk.run("check", "fc6", "--as", "other").code).toBe(3);
+  });
+
   test("drop is the holder's; --force takes it back", () => {
     const desk = setup();
     desk.run("take", "fc6", "--for", "ota: soak");
