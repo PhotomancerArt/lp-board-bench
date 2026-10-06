@@ -1,0 +1,9 @@
+[2026-09-08T19:01:15Z INFO ] 🚀 A new version of espflash is available: v4.5.0
+[2026-09-08T19:01:15Z INFO ] Serial port: '/dev/cu.usbmodem112401'
+[2026-09-08T19:01:15Z INFO ] Connecting...
+[2026-09-08T19:01:16Z INFO ] Using flash stub
+Chip type:         esp32c6 (revision v0.2)
+Crystal frequency: 40 MHz
+Flash size:        4MB
+Features:          WiFi 6, BT 5
+MAC address:       02:00:00:00:00:01
