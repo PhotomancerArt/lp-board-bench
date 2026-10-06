@@ -116,7 +116,7 @@ describe("board (CLI over the fixture desk)", () => {
     expect(result.code).toBe(7);
     expect(result.stdout).toContain("holder=soak dev=/dev/cu.usbmodem112401");
     expect(result.stdout).toContain("other=3");
-    expect(result.stderr).toMatch(/the run ended \(exit 7\); still yours for \d+ min left/);
+    expect(result.stderr).toMatch(/the run ended \(exit 7\); still yours \(\d+ min left\)/);
     const lease = JSON.parse(readFileSync(join(desk.home, "leases", "02:00:00:00:00:01.json"), "utf8"));
     expect(lease.holder).toBe("soak");
     expect(lease.pid).toBeUndefined();

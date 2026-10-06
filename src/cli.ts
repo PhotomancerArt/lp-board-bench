@@ -236,7 +236,7 @@ async function runCommand(home: string, desk: Desk, deps: Deps, args: string[]):
   const kept = settle(home, mac, holder, grace, deps);
   console.error(
     kept
-      ? `${name}: the run ended (exit ${code}); still yours for ${timeLeft(kept, deps)} — board drop ${view?.board?.slug ?? mac} --as ${holder} to free it now`
+      ? `${name}: the run ended (exit ${code}); still yours (${timeLeft(kept, deps)}) — board drop ${view?.board?.slug ?? mac} --as ${holder} to free it now`
       : `${name}: the run ended (exit ${code}); released`,
   );
   return code;
