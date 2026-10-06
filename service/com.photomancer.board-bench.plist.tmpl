@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- `board serve` as a launchd user agent: started at login, restarted if it
+     dies, so no session owns the desk page's lifetime. Rendered by
+     `service/service.sh install`; the @TOKENS@ are filled by sed.
+
+     It runs the INSTALLED binary (@BIN@), never a checkout, so a pruned
+     worktree cannot take it down. launchd reads no rc file, so PATH is spelled
+     out: uhubctl (Homebrew), espflash (cargo), system_profiler (/usr/sbin). -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.photomancer.board-bench</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>@BIN@</string>
+    <string>serve</string>
+    <string>--port</string>
+    <string>@PORT@</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>BOARD_HOME</key><string>@BOARD_HOME@</string>
+    <key>PATH</key><string>/opt/homebrew/bin:@HOME@/.cargo/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+  </dict>
+  <key>WorkingDirectory</key><string>@BOARD_HOME@</string>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>ThrottleInterval</key><integer>5</integer>
+  <key>StandardOutPath</key><string>@BOARD_HOME@/log/serve.log</string>
+  <key>StandardErrorPath</key><string>@BOARD_HOME@/log/serve.log</string>
+</dict>
+</plist>

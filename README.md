@@ -62,6 +62,21 @@ who is waiting. Take, release, take back, power-cycle and edit. It follows the
 system's light or dark theme (`?theme=light|dark` pins one) and works at phone
 width. It acts as `yona (page)`.
 
+### Keeping it running
+
+On the desk the page runs as a launchd user agent, so no session owns it:
+
+```bash
+just service-install     # start at login, restart if it dies; waits until the page answers
+just service status      # loaded? pid? does the page answer?
+just service logs        # follow $BOARD_HOME/log/serve.log
+just service-uninstall
+```
+
+The agent runs the installed binary (`~/.local/bin/board`), never a checkout,
+and `just install` restarts it, so it always serves the binary just built.
+`service-install` refuses while a hand-run `board serve` holds the port.
+
 ## The files
 
 Everything lives in `$BOARD_HOME` (default `~/.photomancer/desk`), never in
@@ -73,6 +88,7 @@ this repo:
 | `leases/<MAC>.json` | one live lease per board |
 | `waiting/<MAC>/<id>.json` | the line for a board |
 | `images/<MAC>.board.svg`, `<MAC>.art.svg` | pictures, written by whoever can draw them (LightPlayer's `lp-cli hardware desk-images`); an entry's `image` names a photo instead |
+| `log/serve.log` | the page service's output |
 | `hub-ports.json` | where each board was last seen on a hub, so `power-on` finds a board that is off |
 | `.lock/` | the mutex every read-modify-write takes |
 
