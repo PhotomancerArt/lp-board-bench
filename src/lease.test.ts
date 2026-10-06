@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 
 import { fakeDeps, MAC_A, tempHome } from "../test/fake_deps.ts";
-import { describeLease, drop, liveLease, parseFor, readLease, renew, take } from "./lease.ts";
+import { describeLease, drop, liveLease, parseFor, readLease, renew, settle, take } from "./lease.ts";
 import { leasePath } from "./paths.ts";
 import { joinLine } from "./waiting.ts";
 
@@ -117,6 +117,30 @@ describe("leases", () => {
       reason: "line",
     });
     expect(take(home, { mac: MAC_A, holder: "wifi", purpose: "", waiterId: first.id }, deps).ok).toBe(true);
+  });
+
+  test("settling a run keeps the board for the grace, without the run's pid", () => {
+    const home = tempHome();
+    const deps = fakeDeps();
+    deps.alivePids.add(77);
+    take(home, { mac: MAC_A, holder: "soak", purpose: "power cuts", pid: 77 }, deps);
+    deps.advanceMinutes(25);
+    expect(settle(home, MAC_A, "soak", 10, deps)?.expires).toBe("2026-10-05T20:05:00.000Z");
+    deps.kill(77);
+    expect(liveLease(home, MAC_A, deps)?.holder).toBe("soak");
+    expect(readLease(home, MAC_A)?.pid).toBeUndefined();
+    deps.advanceMinutes(10);
+    expect(liveLease(home, MAC_A, deps)).toBeUndefined();
+  });
+
+  test("settling with no grace drops the lease; settling someone else's does nothing", () => {
+    const home = tempHome();
+    const deps = fakeDeps();
+    take(home, { mac: MAC_A, holder: "soak", purpose: "" }, deps);
+    expect(settle(home, MAC_A, "other", 10, deps)).toBeUndefined();
+    expect(liveLease(home, MAC_A, deps)?.holder).toBe("soak");
+    settle(home, MAC_A, "soak", 0, deps);
+    expect(readLease(home, MAC_A)).toBeUndefined();
   });
 
   test("--for splits who from why at the first colon", () => {

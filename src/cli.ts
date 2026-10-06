@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 import { checkBoard, chipWarnings, EXIT } from "./check.ts";
 import { realDeps, type Deps } from "./deps.ts";
 import { deskFromEnv, type Desk } from "./desk/desk.ts";
-import { describeLease, drop, LeaseError, parseFor, renew, take, timeLeft } from "./lease.ts";
+import { describeLease, drop, LeaseError, parseFor, renew, settle, take, timeLeft } from "./lease.ts";
 import { normalizeMac } from "./mac.ts";
 import { boardHome } from "./paths.ts";
 import { power, type PowerAction } from "./power.ts";
@@ -22,7 +22,9 @@ const HELP = `board — the desk's boards, who holds them, and who is waiting
   board list [--json]                       every board: mark, slug, role, port, hub, holder, line
   board show <board> [--json]               one board in full
   board take <board> --for "<who>: <why>"   lease it (30 min); prints its port
-        [--minutes N] [--pid N] [--wait [--timeout MIN]]
+        [--minutes N] [--pid N] [--wait [--timeout MIN]]   (--pid: ends when that process does, no grace)
+  board run <board> --for "<who>: <why>" [--grace 10] [--minutes N] [--wait] -- <command…>
+                                            hold it while the command runs, then for the grace (minutes)
   board renew <board> [--minutes N] [--as <who>]
   board drop <board> [--as <who>] [--force]
   board check <board|/dev/port> [--as <who>] [--chip <probed>]
@@ -67,6 +69,8 @@ export async function main(argv: string[], env = process.env, deps: Deps = realD
         return show(home, desk, deps, rest);
       case "take":
         return await takeCommand(home, desk, deps, env, rest);
+      case "run":
+        return await runCommand(home, desk, deps, rest);
       case "renew":
         return renewCommand(home, desk, deps, env, rest);
       case "drop":
@@ -165,9 +169,97 @@ async function takeCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Pro
     timeout: { type: "string" },
   });
   if (!values.for) throw new UsageError('take needs --for "<who>: <why>"');
-  const { holder, purpose } = parseFor(values.for);
+  const { view, name } = await acquire(home, desk, deps, need(positionals[0], "take <board>"), values.for, {
+    ...(values.minutes ? { minutes: number(values.minutes, "--minutes") } : {}),
+    ...(values.pid ? { pid: number(values.pid, "--pid") } : {}),
+    wait: values.wait === true,
+    ...(values.timeout ? { timeoutMinutes: number(values.timeout, "--timeout") } : {}),
+  });
+  if (view?.device?.port) console.log(view.device.port);
+  else console.error(`${name} is not plugged in right now`);
+  return EXIT.ok;
+}
+
+/** How often `board run` renews its lease while the command runs. */
+const RUN_RENEW_MS = 60_000;
+
+/**
+ * `board run <board> --for "<who>: <why>" [--grace M] -- <command…>`: hold the
+ * board for as long as the command runs (renewed every minute, so no expiry
+ * mid-run), then keep it for the grace period so the holder can look at what
+ * the run left behind. The command gets BOARD_HOLDER (so `just` recipes inside
+ * pass their own lease check) and BOARD_DEV (the board's port).
+ */
+async function runCommand(home: string, desk: Desk, deps: Deps, args: string[]): Promise<number> {
+  const { values, positionals } = parse(args, {
+    for: { type: "string" },
+    minutes: { type: "string" },
+    grace: { type: "string" },
+    wait: { type: "boolean" },
+    timeout: { type: "string" },
+  });
+  if (!values.for) throw new UsageError('run needs --for "<who>: <why>"');
+  const [ref, ...command] = positionals;
+  if (!ref || command.length === 0) throw new UsageError("usage: board run <board> --for \"<who>: <why>\" -- <command…>");
+  const minutes = values.minutes ? number(values.minutes, "--minutes") : 30;
+  const grace = values.grace ? number(values.grace, "--grace") : 10;
+  const { view, name, mac, holder } = await acquire(home, desk, deps, ref, values.for, {
+    minutes,
+    // The lease dies with this process if it is killed hard: a crashed run
+    // must not hold a board for its whole grace.
+    pid: process.pid,
+    wait: values.wait === true,
+    ...(values.timeout ? { timeoutMinutes: number(values.timeout, "--timeout") } : {}),
+  });
+
+  const child = Bun.spawn(command, {
+    stdio: ["inherit", "inherit", "inherit"],
+    env: { ...process.env, BOARD_HOLDER: holder, ...(view?.device?.port ? { BOARD_DEV: view.device.port } : {}) },
+  });
+  const forward = (signal: NodeJS.Signals) => () => child.kill(signal);
+  const onInt = forward("SIGINT");
+  const onTerm = forward("SIGTERM");
+  process.on("SIGINT", onInt);
+  process.on("SIGTERM", onTerm);
+  const renewer = setInterval(() => {
+    try {
+      renew(home, mac, holder, minutes, deps);
+    } catch (err) {
+      console.error(`board run: could not renew ${name}: ${(err as Error).message}`);
+    }
+  }, RUN_RENEW_MS);
+  const code = await child.exited;
+  clearInterval(renewer);
+  process.off("SIGINT", onInt);
+  process.off("SIGTERM", onTerm);
+
+  const kept = settle(home, mac, holder, grace, deps);
+  console.error(
+    kept
+      ? `${name}: the run ended (exit ${code}); still yours for ${timeLeft(kept, deps)} — board drop ${view?.board?.slug ?? mac} --as ${holder} to free it now`
+      : `${name}: the run ended (exit ${code}); released`,
+  );
+  return code;
+}
+
+interface AcquireOptions {
+  minutes?: number;
+  pid?: number;
+  wait: boolean;
+  timeoutMinutes?: number;
+}
+
+/** Take a board (or wait in line for it), refusing with the holder's name. */
+async function acquire(
+  home: string,
+  desk: Desk,
+  deps: Deps,
+  ref: string,
+  forText: string,
+  options: AcquireOptions,
+): Promise<{ view: BoardView | undefined; name: string; mac: string; holder: string }> {
+  const { holder, purpose } = parseFor(forText);
   const state = buildState(home, desk, deps);
-  const ref = need(positionals[0], "take <board>");
   const view = resolveRef(state, ref);
   const mac = view?.mac ?? normalizeMac(ref);
   if (!mac) {
@@ -181,14 +273,12 @@ async function takeCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Pro
     mac,
     holder,
     purpose,
-    ...(values.minutes ? { minutes: number(values.minutes, "--minutes") } : {}),
-    ...(values.pid ? { pid: number(values.pid, "--pid") } : {}),
+    ...(options.minutes !== undefined ? { minutes: options.minutes } : {}),
+    ...(options.pid !== undefined ? { pid: options.pid } : {}),
   };
 
   let result = take(home, request, deps);
-  if (!result.ok && values.wait) {
-    result = await waitInLine(home, deps, request, name, values.timeout ? number(values.timeout, "--timeout") : undefined);
-  }
+  if (!result.ok && options.wait) result = await waitInLine(home, deps, request, name, options.timeoutMinutes);
   if (!result.ok) {
     if (result.reason === "held") {
       throw new Refusal(`${name} is ${describeLease(result.lease, deps)} — add --wait to join the line`, EXIT.held);
@@ -200,9 +290,7 @@ async function takeCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Pro
   console.error(`${name}: ${verb} by ${holder} (${timeLeft(result.lease, deps)})`);
   if (view?.board?.role === "art") console.error(`⚠️ ${name} is an art piece. Treat what is on it with care.`);
   for (const warning of view ? chipWarnings(view, undefined) : []) console.error(warning);
-  if (view?.device?.port) console.log(view.device.port);
-  else console.error(`${name} is not plugged in right now`);
-  return EXIT.ok;
+  return { view, name, mac, holder };
 }
 
 async function waitInLine(

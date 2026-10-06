@@ -6,7 +6,8 @@ hub power, and a local page. Read `README.md` first; this file is the rules.
 ## Using the desk (any repo, any agent)
 
 - **Lease before you flash, probe, reset or power-cycle a board**:
-  `board take <slug> --for "<who>: <why>"`. Drop it when done. A refusal names
+  `board take <slug> --for "<who>: <why>"` (or `board run <slug> --for … -- <cmd>`
+  for a long run). Drop it when done. A refusal names
   the holder: wait (`--wait`), or ask them; never work around it.
 - **Say `MARK slug`** (`FC6 fixture-c6`) when you talk about a board, and
   identify boards by MAC + chip, never by hub port or `/dev` name — both move.
