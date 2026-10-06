@@ -159,7 +159,7 @@ function setup() {
       const env = args.find((arg): arg is Record<string, string> => typeof arg === "object") ?? {};
       const argv = args.filter((arg): arg is string => typeof arg === "string");
       const result = Bun.spawnSync([process.execPath, cli, ...argv], {
-        env: { PATH: process.env.PATH ?? "", HOME: home, BOARD_HOME: home, BOARD_FAKE_DESK: fixture, ...env },
+        env: { PATH: process.env.PATH ?? "", HOME: home, BOARD_HOME: home, BOARD_FAKE_DESK: fixture, BOARD_SETTLE_MS: "0", ...env },
       });
       return { code: result.exitCode ?? -1, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
     },

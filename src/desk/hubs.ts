@@ -7,6 +7,10 @@ import { isMac, normalizeMac } from "../mac.ts";
 
 export interface HubPort {
   number: number;
+  /** The hub says the port has power (`power`, and not `off`). */
+  powered: boolean;
+  /** The hub sees a device on the port (`connect`). */
+  connected: boolean;
   /** The attached device's vid:pid, when something is attached. */
   vidPid?: string;
   description?: string;
@@ -37,13 +41,16 @@ export function parseUhubctl(text: string): Hub[] {
       hubs.push({ path: head[1]!, vidPid: head[2]!, description: head[3]!.trim(), ports: [] });
       continue;
     }
-    const port = /^\s+Port (\d+): \S+.*?(?:\[([0-9a-f]{4}:[0-9a-f]{4}) ?([^\]]*)\])?\s*$/.exec(line);
+    const port = /^\s+Port (\d+): \S+(.*?)(?:\[([0-9a-f]{4}:[0-9a-f]{4}) ?([^\]]*)\])?\s*$/.exec(line);
     if (port && hubs.length > 0) {
-      const description = port[3]?.trim();
+      const status = port[2]!;
+      const description = port[4]?.trim();
       const lastWord = description?.split(/\s+/).pop();
       hubs.at(-1)!.ports.push({
         number: Number(port[1]),
-        ...(port[2] ? { vidPid: port[2] } : {}),
+        powered: /\bpower\b/.test(status) && !/\boff\b/.test(status),
+        connected: /\bconnect\b/.test(status),
+        ...(port[3] ? { vidPid: port[3] } : {}),
         ...(description ? { description } : {}),
         ...(lastWord && isMac(lastWord) ? { mac: normalizeMac(lastWord)! } : {}),
       });

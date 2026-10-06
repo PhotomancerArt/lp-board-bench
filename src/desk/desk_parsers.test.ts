@@ -43,6 +43,22 @@ describe("hubs (uhubctl)", () => {
     ]);
   });
 
+  test("reads whether each port has power and a device, as the hub reports it", () => {
+    const [hub] = parseUhubctl(
+      [
+        "Current status for hub 1-1.2 [2109:2817 VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps]",
+        "  Port 1: 0100 power",
+        "  Port 2: 0000 off",
+        "  Port 4: 0103 power enable connect [303a:1001 Espressif USB JTAG/serial debug unit 02:00:00:00:00:01]",
+      ].join("\n"),
+    );
+    expect(hub!.ports.map((port) => [port.number, port.powered, port.connected])).toEqual([
+      [1, true, false],
+      [2, false, false],
+      [4, true, true],
+    ]);
+  });
+
   test("a VIA USB 2 hub's twin is the USB 3 hub at the same path under the other root port", () => {
     expect(twinOf(hubs, "1-1.2.3")).toBe("1-2.2.3");
     expect(twinOf(hubs, "1-2.2.3")).toBe("1-1.2.3");

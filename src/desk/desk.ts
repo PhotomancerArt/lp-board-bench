@@ -71,18 +71,24 @@ export function fixtureDesk(dir: string): Desk {
     usbDevices() {
       const hubs = parseUhubctl(read("uhubctl.txt"));
       const switchedOff = off();
-      const offMacs = new Set(
-        hubs.flatMap((hub) =>
-          hub.ports.filter((port) => switchedOff.get(`${hub.path} ${port.number}`) && port.mac).map((port) => port.mac!),
-        ),
-      );
+      const offPorts = hubs.flatMap((hub) => hub.ports.filter((port) => switchedOff.get(`${hub.path} ${port.number}`)));
+      const offMacs = new Set(offPorts.flatMap((port) => (port.mac ? [port.mac] : [])));
+      const offKinds = new Set(offPorts.flatMap((port) => (!port.mac && port.vidPid ? [port.vidPid] : [])));
       const nodes = read("dev.txt").split("\n").filter(Boolean);
-      return parseSystemProfiler(JSON.parse(read("system_profiler.json")), nodes).filter(
-        (device) => !(device.serial && offMacs.has(device.serial)),
+      return parseSystemProfiler(JSON.parse(read("system_profiler.json")), nodes).filter((device) =>
+        device.serial ? !offMacs.has(device.serial) : !offKinds.has(`${device.vid}:${device.pid}`),
       );
     },
     hubs() {
-      return existsSync(join(dir, "uhubctl.txt")) ? parseUhubctl(read("uhubctl.txt")) : undefined;
+      if (!existsSync(join(dir, "uhubctl.txt"))) return undefined;
+      // A switched-off port reads as uhubctl prints one: off, nothing attached.
+      const switchedOff = off();
+      return parseUhubctl(read("uhubctl.txt")).map((hub) => ({
+        ...hub,
+        ports: hub.ports.map((port) =>
+          switchedOff.get(`${hub.path} ${port.number}`) ? { number: port.number, powered: false, connected: false } : port,
+        ),
+      }));
     },
     boardInfo(port) {
       const name = readdirSync(dir).find(
