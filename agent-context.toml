@@ -1,0 +1,16 @@
+# Where agent planning artifacts for this repo live, and how the repo ships.
+# Read by the yona-* skills.
+#
+# Plans:    <planning_root>/<repo_slug>/<YYYY-MM-DD-HHMM>-<name>/
+# Archive:  <planning_root>/<repo_slug>/_archive/
+
+[agent]
+repo_slug = "lp-board-bench"
+
+# Direct path, expanded for `~`. Overridden by planning_root_env when that
+# variable is set and non-empty.
+planning_root = "~/.photomancer/planning"
+planning_root_env = "PHOTOMANCER_PLANNING_ROOT"
+
+# [ship] — nothing deploys; merging the PR is the end of the pipeline.
+# Installing on the desk is `just install`.
