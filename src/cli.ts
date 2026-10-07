@@ -65,25 +65,25 @@ export async function main(argv: string[], env = process.env, deps: Deps = realD
         console.log(HELP);
         return EXIT.ok;
       case "list":
-        return list(home, desk, deps, rest);
+        return await list(home, desk, deps, rest);
       case "show":
-        return show(home, desk, deps, rest);
+        return await show(home, desk, deps, rest);
       case "take":
         return await takeCommand(home, desk, deps, env, rest);
       case "run":
         return await runCommand(home, desk, deps, env, rest);
       case "renew":
-        return renewCommand(home, desk, deps, env, rest);
+        return await renewCommand(home, desk, deps, env, rest);
       case "drop":
-        return dropCommand(home, desk, deps, env, rest);
+        return await dropCommand(home, desk, deps, env, rest);
       case "check":
-        return checkCommand(home, desk, deps, env, rest);
+        return await checkCommand(home, desk, deps, env, rest);
       case "set":
         return setCommand(home, desk, deps, rest);
       case "add":
-        return addCommand(home, desk, deps, env, rest);
+        return await addCommand(home, desk, deps, env, rest);
       case "verify":
-        return verifyCommand(home, desk, deps, env, rest);
+        return await verifyCommand(home, desk, deps, env, rest);
       case "power-cycle":
       case "power-off":
       case "power-on":
@@ -112,9 +112,9 @@ export async function main(argv: string[], env = process.env, deps: Deps = realD
   }
 }
 
-function list(home: string, desk: Desk, deps: Deps, args: string[]): number {
+async function list(home: string, desk: Desk, deps: Deps, args: string[]): Promise<number> {
   const { values } = parse(args, { json: { type: "boolean" } });
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   if (values.json) {
     console.log(JSON.stringify(stateJson(state), null, 2));
     return EXIT.ok;
@@ -134,9 +134,9 @@ function list(home: string, desk: Desk, deps: Deps, args: string[]): number {
   return EXIT.ok;
 }
 
-function show(home: string, desk: Desk, deps: Deps, args: string[]): number {
+async function show(home: string, desk: Desk, deps: Deps, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, { json: { type: "boolean" } });
-  const view = mustResolve(buildState(home, desk, deps), positionals[0]);
+  const view = mustResolve((await buildState(home, desk, deps)), positionals[0]);
   if (values.json) {
     console.log(JSON.stringify(viewJson(view), null, 2));
     return EXIT.ok;
@@ -262,7 +262,7 @@ async function acquire(
   purpose: string,
   options: AcquireOptions,
 ): Promise<{ view: BoardView | undefined; name: string; mac: string }> {
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   const view = resolveRef(state, ref);
   const mac = view?.mac ?? normalizeMac(ref);
   if (!mac) {
@@ -342,9 +342,9 @@ async function waitInLine(
   }
 }
 
-function renewCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): number {
+async function renewCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, { minutes: { type: "string" }, as: { type: "string" } });
-  const view = mustResolve(buildState(home, desk, deps), positionals[0]);
+  const view = mustResolve((await buildState(home, desk, deps)), positionals[0]);
   const lease = renew(
     home,
     leaseKey(view),
@@ -356,17 +356,17 @@ function renewCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessE
   return EXIT.ok;
 }
 
-function dropCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): number {
+async function dropCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, { as: { type: "string" }, force: { type: "boolean" } });
-  const view = mustResolve(buildState(home, desk, deps), positionals[0]);
+  const view = mustResolve((await buildState(home, desk, deps)), positionals[0]);
   const dropped = drop(home, leaseKey(view), who(values.as, env), values.force === true, deps);
   console.error(dropped ? `${viewName(view)}: dropped ${dropped.holder}'s lease` : `${viewName(view)}: was not leased`);
   return EXIT.ok;
 }
 
-function checkCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): number {
+async function checkCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, { as: { type: "string" }, chip: { type: "string" } });
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   const verdict = checkBoard(state, need(positionals[0], "check <board>"), who(values.as, env), values.chip, deps);
   for (const warning of verdict.warnings) console.error(warning);
   console.error(verdict.message);
@@ -400,7 +400,7 @@ function setCommand(home: string, desk: Desk, deps: Deps, args: string[]): numbe
   return EXIT.ok;
 }
 
-function addCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): number {
+async function addCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values } = parse(args, {
     slug: { type: "string" },
     mark: { type: "string" },
@@ -425,10 +425,10 @@ function addCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv
   };
   if (!values.mac) {
     if (!values.port) throw new UsageError("add needs --port (to probe) or --mac");
-    const verdict = checkBoard(buildState(home, desk, deps), values.port, who(values.as, env), undefined, deps);
+    const verdict = checkBoard((await buildState(home, desk, deps)), values.port, who(values.as, env), undefined, deps);
     if (verdict.code !== EXIT.ok) throw new Refusal(verdict.message, verdict.code);
     console.error(`probing ${values.port} with espflash (this resets the board)…`);
-    const info = desk.boardInfo(values.port);
+    const info = await desk.boardInfo(values.port);
     if (!info.mac) throw new Refusal(`espflash did not report a MAC for ${values.port}`, EXIT.error);
     Object.assign(input, { mac: info.mac, chip: info.chip, flash: info.flash });
     if (!values.usb && verdict.view?.device && !verdict.view.device.serial) {
@@ -444,9 +444,9 @@ function addCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv
   return EXIT.ok;
 }
 
-function verifyCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): number {
+async function verifyCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, { as: { type: "string" } });
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   const ref = need(positionals[0], "verify <board>");
   const verdict = checkBoard(state, ref, who(values.as, env), undefined, deps);
   if (verdict.code !== EXIT.ok) throw new Refusal(verdict.message, verdict.code);
@@ -454,7 +454,7 @@ function verifyCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Process
   const port = view.device?.port;
   if (!port) throw new Refusal(`${viewName(view)} is not plugged in`, EXIT.unknown);
   console.error(`probing ${port} with espflash (this resets the board)…`);
-  const info = desk.boardInfo(port);
+  const info = await desk.boardInfo(port);
   const mismatches: string[] = [...chipWarnings(view, info.chip)];
   if (view.board?.flash && info.flash && view.board.flash !== info.flash) {
     mismatches.push(`⚠️ MISMATCH: ${viewName(view)} is registered with ${view.board.flash} flash, espflash says ${info.flash}`);
@@ -476,7 +476,7 @@ async function powerCommand(
   args: string[],
 ): Promise<number> {
   const { values, positionals } = parse(args, { as: { type: "string" }, "off-secs": { type: "string" } });
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   if (!state.hubsAvailable) throw new Refusal("uhubctl is not installed on this machine", EXIT.error);
   const verdict = checkBoard(state, need(positionals[0], `power-${action} <board>`), who(values.as, env), undefined, deps);
   if (verdict.code !== EXIT.ok) throw new Refusal(verdict.message, verdict.code);
