@@ -24,7 +24,9 @@ url="http://127.0.0.1:$port/"
 
 loaded() { launchctl print "$domain/$label" >/dev/null 2>&1; }
 
-answers() { curl -fsS --max-time 2 -o /dev/null "${url}api/state" 2>/dev/null; }
+# The state reads system_profiler, which can take seconds; a page that is down
+# refuses the connection at once, so the long ceiling costs nothing then.
+answers() { curl -fsS --max-time 20 -o /dev/null "${url}api/state" 2>/dev/null; }
 
 wait_until_answering() {
   for _ in $(seq 1 20); do
