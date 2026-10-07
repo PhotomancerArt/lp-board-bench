@@ -36,16 +36,16 @@ export async function power(
   }
   const hubs = hubsOf(location);
   const switched = hubs.map((hub) => `${hub} port ${location.port}`);
-  const on = () => {
-    for (const hub of hubs) desk.setPower(hub, location.port, true);
+  const on = async () => {
+    for (const hub of hubs) await desk.setPower(hub, location.port, true);
   };
   if (action === "off" || action === "cycle") {
-    for (const hub of hubs) desk.setPower(hub, location.port, false);
+    for (const hub of hubs) await desk.setPower(hub, location.port, false);
     // The hub is the witness, not the host: macOS keeps the device node (and
     // system_profiler keeps listing it) for as long as the port stays off,
     // and only notices on power-up. Measured on the desk, 2026-10-06.
     if (await stillConnected(desk, location, options.leaveSeconds ?? 5)) {
-      if (action === "cycle") on();
+      if (action === "cycle") await on();
       throw new PowerError(
         `the board stayed on the bus after ${switched.join(" and ")} went off: power did not drop ` +
           "(a hub twin not switched, or the board is powered another way)",
@@ -54,7 +54,7 @@ export async function power(
   }
   if (action === "off") return { switched };
   if (action === "cycle") await Bun.sleep((options.offSeconds ?? 2) * 1000);
-  on();
+  await on();
   const port = await waitForReturn(desk, view, location, options.returnSeconds ?? 15, options.settleMs ?? settleMs());
   return { switched, ...(port ? { port } : {}) };
 }
@@ -63,15 +63,14 @@ export async function power(
 async function stillConnected(desk: Desk, location: HubLocation, seconds: number): Promise<boolean> {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    if (!hubPort(desk, location)?.connected) return false;
+    if (!(await hubPort(desk, location))?.connected) return false;
     if (Date.now() >= deadline) return true;
     await Bun.sleep(250);
   }
 }
 
-function hubPort(desk: Desk, location: HubLocation) {
-  return desk
-    .hubs()
+async function hubPort(desk: Desk, location: HubLocation) {
+  return (await desk.hubs())
     ?.find((hub) => hub.path === location.hub)
     ?.ports.find((port) => port.number === location.port);
 }
@@ -96,10 +95,10 @@ async function waitForReturn(
   const deadline = Date.now() + seconds * 1000;
   let seenOnHubAt: number | undefined;
   while (Date.now() < deadline) {
-    const port = hubPort(desk, location);
+    const port = await hubPort(desk, location);
     const onHub = port?.connected === true && (view.mac === undefined || port.mac === undefined || port.mac === view.mac);
     if (onHub) seenOnHubAt ??= Date.now();
-    const device = findDevice(desk, view);
+    const device = await findDevice(desk, view);
     if (onHub && device?.port && Date.now() - seenOnHubAt! >= settle) return device.port;
     await Bun.sleep(250);
   }
@@ -107,9 +106,9 @@ async function waitForReturn(
 }
 
 /** The board on the bus: by MAC, or a bridge with no serial number by its kind. */
-function findDevice(desk: Desk, view: BoardView) {
+async function findDevice(desk: Desk, view: BoardView) {
   const wantedVidPid = view.device ? vidPid(view.device) : view.board?.usb;
-  return desk.usbDevices().find((candidate) =>
+  return (await desk.usbDevices()).find((candidate) =>
     view.mac && candidate.serial
       ? normalizeMac(candidate.serial) === view.mac
       : wantedVidPid !== undefined && vidPid(candidate) === wantedVidPid,

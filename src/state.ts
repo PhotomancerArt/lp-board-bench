@@ -39,10 +39,9 @@ export interface DeskState {
   hubsAvailable: boolean;
 }
 
-export function buildState(home: string, desk: Desk, deps: Deps): DeskState {
+export async function buildState(home: string, desk: Desk, deps: Deps): Promise<DeskState> {
   const boards = loadRegistry(home);
-  const devices = desk.usbDevices();
-  const hubs = desk.hubs();
+  const [devices, hubs] = await Promise.all([desk.usbDevices(), desk.hubs()]);
   const memory = readHubMemory(home);
   const claimed = new Set<UsbDevice>();
 

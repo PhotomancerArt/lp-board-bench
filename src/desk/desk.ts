@@ -3,6 +3,11 @@
  * fixtures in tests. The real desk is macOS: system_profiler, /dev, uhubctl,
  * espflash. `BOARD_FAKE_DESK=<dir>` swaps in a fixture directory (see
  * test/fixtures/desk/README.md) — the seam the CLI tests use.
+ *
+ * Every read is async and never blocks the event loop: Bun 1.1.18 segfaults
+ * when an HTTP client hangs up while the loop is blocked, so one `spawnSync`
+ * under a slow system_profiler let a closed tab (or a 2 s status probe) take
+ * the desk page down. Measured on the desk, 2026-10-06.
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -12,12 +17,12 @@ import { parseUhubctl, type Hub } from "./hubs.ts";
 import { parseSystemProfiler, type UsbDevice } from "./presence.ts";
 
 export interface Desk {
-  usbDevices(): UsbDevice[];
+  usbDevices(): Promise<UsbDevice[]>;
   /** Undefined when this machine has no uhubctl. */
-  hubs(): Hub[] | undefined;
+  hubs(): Promise<Hub[] | undefined>;
   /** Resets the board. */
-  boardInfo(port: string): BoardInfo;
-  setPower(hub: string, port: number, on: boolean): void;
+  boardInfo(port: string): Promise<BoardInfo>;
+  setPower(hub: string, port: number, on: boolean): Promise<void>;
 }
 
 export class DeskError extends Error {}
@@ -29,24 +34,24 @@ export function deskFromEnv(env: Record<string, string | undefined> = process.en
 
 export function macDesk(): Desk {
   return {
-    usbDevices() {
+    async usbDevices() {
       if (process.platform !== "darwin") return [];
-      const json = run(["system_profiler", "SPUSBHostDataType", "-json"], 15_000);
+      const json = await run(["system_profiler", "SPUSBHostDataType", "-json"], 15_000);
       const nodes = readdirSync("/dev")
         .filter((name) => name.startsWith("cu."))
         .map((name) => `/dev/${name}`);
       return parseSystemProfiler(JSON.parse(json), nodes);
     },
-    hubs() {
+    async hubs() {
       if (!Bun.which("uhubctl")) return undefined;
-      return parseUhubctl(run(["uhubctl"], 15_000));
+      return parseUhubctl(await run(["uhubctl"], 15_000));
     },
-    boardInfo(port) {
+    async boardInfo(port) {
       if (!Bun.which("espflash")) throw new DeskError("espflash is not installed");
-      return parseBoardInfo(run(["espflash", "board-info", "--port", port], 30_000, true));
+      return parseBoardInfo(await run(["espflash", "board-info", "--port", port], 30_000, true));
     },
-    setPower(hub, port, on) {
-      run(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], 15_000);
+    async setPower(hub, port, on) {
+      await run(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], 15_000);
     },
   };
 }
@@ -68,7 +73,7 @@ export function fixtureDesk(dir: string): Desk {
     return state;
   };
   return {
-    usbDevices() {
+    async usbDevices() {
       const hubs = parseUhubctl(read("uhubctl.txt"));
       const switchedOff = off();
       const offPorts = hubs.flatMap((hub) => hub.ports.filter((port) => switchedOff.get(`${hub.path} ${port.number}`)));
@@ -79,7 +84,7 @@ export function fixtureDesk(dir: string): Desk {
         device.serial ? !offMacs.has(device.serial) : !offKinds.has(`${device.vid}:${device.pid}`),
       );
     },
-    hubs() {
+    async hubs() {
       if (!existsSync(join(dir, "uhubctl.txt"))) return undefined;
       // A switched-off port reads as uhubctl prints one: off, nothing attached.
       const switchedOff = off();
@@ -90,26 +95,37 @@ export function fixtureDesk(dir: string): Desk {
         ),
       }));
     },
-    boardInfo(port) {
+    async boardInfo(port) {
       const name = readdirSync(dir).find(
         (file) => file.startsWith("espflash-board-info") && read(file).includes(`'${port}'`),
       );
       if (!name) throw new DeskError(`espflash could not connect to ${port}`);
       return parseBoardInfo(read(name));
     },
-    setPower(hub, port, on) {
+    async setPower(hub, port, on) {
       appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}\n`);
     },
   };
 }
 
-function run(cmd: string[], timeoutMs: number, withStderr = false): string {
-  const result = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe", timeout: timeoutMs });
-  const out = result.stdout.toString();
-  if (!result.success) {
-    const why = result.exitCode === null ? `timed out after ${timeoutMs / 1000} s` : `exited ${result.exitCode}`;
-    throw new DeskError(`${cmd.join(" ")} ${why}: ${(result.stderr.toString() || out).trim().slice(-400)}`);
+/** A desk command's output. Bun 1.1.18's `Bun.spawn` ignores `timeout`, so the kill is ours. */
+export async function run(cmd: string[], timeoutMs: number, withStderr = false): Promise<string> {
+  const child = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+  let timedOut = false;
+  const timer = setTimeout(() => {
+    timedOut = true;
+    child.kill();
+  }, timeoutMs);
+  const [out, err, exitCode] = await Promise.all([
+    new Response(child.stdout).text(),
+    new Response(child.stderr).text(),
+    child.exited,
+  ]);
+  clearTimeout(timer);
+  if (timedOut || exitCode !== 0) {
+    const why = timedOut ? `timed out after ${timeoutMs / 1000} s` : `exited ${exitCode}`;
+    throw new DeskError(`${cmd.join(" ")} ${why}: ${(err || out).trim().slice(-400)}`);
   }
   // espflash prints its banner and its log on different streams; it wants both.
-  return withStderr ? `${out}\n${result.stderr.toString()}` : out;
+  return withStderr ? `${out}\n${err}` : out;
 }

@@ -3,7 +3,7 @@ import { cpSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { fakeDeps, tempHome } from "../test/fake_deps.ts";
-import { fixtureDesk } from "./desk/desk.ts";
+import { fixtureDesk, type Desk } from "./desk/desk.ts";
 import { take } from "./lease.ts";
 import { imagesDir, registryPath } from "./paths.ts";
 import { loadRegistry } from "./registry.ts";
@@ -70,9 +70,31 @@ describe("the desk page's API", () => {
     expect((await back.json()).message).toContain("released ota's lease");
     expect((await page.post(`/api/boards/${FC6}/take`)).status).toBe(200);
   });
+
+  test("a client that hangs up mid-read does not take the page down", async () => {
+    // On the desk, Bun 1.1.18 segfaulted when a client hung up during a read
+    // that blocked the event loop (spawnSync). In this one process a blocking
+    // read fails sooner: the client's own timer cannot fire to hang up.
+    const page = setup((desk) => ({
+      ...desk,
+      usbDevices: async () => {
+        await Bun.sleep(200);
+        return desk.usbDevices();
+      },
+    }));
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: page.handler });
+    try {
+      const url = `http://127.0.0.1:${server.port}/api/state`;
+      await expect(fetch(url, { signal: AbortSignal.timeout(20) })).rejects.toThrow();
+      await Bun.sleep(300);
+      expect((await fetch(url)).status).toBe(200);
+    } finally {
+      server.stop(true);
+    }
+  });
 });
 
-function setup() {
+function setup(slow: (desk: Desk) => Desk = (desk) => desk) {
   const home = tempHome();
   const fixture = tempHome();
   cpSync(join(import.meta.dir, "..", "test", "fixtures", "desk"), fixture, { recursive: true });
@@ -91,11 +113,12 @@ function setup() {
     ].join("\n"),
   );
   const deps = fakeDeps();
-  const handler = deskHandler(home, fixtureDesk(fixture), deps);
+  const handler = deskHandler(home, slow(fixtureDesk(fixture)), deps);
   const at = (path: string) => `http://127.0.0.1${path}`;
   return {
     home,
     deps,
+    handler,
     get: (path: string) => handler(new Request(at(path))),
     post: (path: string, body?: unknown) =>
       handler(
