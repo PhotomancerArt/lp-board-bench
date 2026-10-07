@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, writeFileSync } from "node:fs";
 
 import { fakeDeps, MAC_A, tempHome } from "../test/fake_deps.ts";
-import { describeLease, drop, liveLease, parseFor, readLease, renew, settle, take } from "./lease.ts";
+import { describeLease, drop, liveLease, readLease, renew, settle, take } from "./lease.ts";
 import { leasePath } from "./paths.ts";
 import { joinLine } from "./waiting.ts";
 
@@ -141,13 +141,5 @@ describe("leases", () => {
     expect(liveLease(home, MAC_A, deps)?.holder).toBe("soak");
     settle(home, MAC_A, "soak", 0, deps);
     expect(readLease(home, MAC_A)).toBeUndefined();
-  });
-
-  test("--for splits who from why at the first colon", () => {
-    expect(parseFor("ota-director: power-cut soak: round 2")).toEqual({
-      holder: "ota-director",
-      purpose: "power-cut soak: round 2",
-    });
-    expect(parseFor("  yona ")).toEqual({ holder: "yona", purpose: "" });
   });
 });

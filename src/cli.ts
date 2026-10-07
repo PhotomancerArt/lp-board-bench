@@ -8,7 +8,7 @@ import { parseArgs } from "node:util";
 import { checkBoard, chipWarnings, EXIT } from "./check.ts";
 import { realDeps, type Deps } from "./deps.ts";
 import { deskFromEnv, type Desk } from "./desk/desk.ts";
-import { describeLease, drop, LeaseError, parseFor, renew, settle, take, timeLeft } from "./lease.ts";
+import { describeLease, drop, LeaseError, renew, settle, take, timeLeft } from "./lease.ts";
 import { normalizeMac } from "./mac.ts";
 import { boardHome } from "./paths.ts";
 import { power, type PowerAction } from "./power.ts";
@@ -21,9 +21,9 @@ const HELP = `board — the desk's boards, who holds them, and who is waiting
 
   board list [--json]                       every board: mark, slug, role, port, hub, holder, line
   board show <board> [--json]               one board in full
-  board take <board> --for "<who>: <why>"   lease it (30 min); prints its port
+  board take <board> --as <who> --for "<why>"   lease it (30 min); prints its port
         [--minutes N] [--pid N] [--wait [--timeout MIN]]   (--pid: ends when that process does, no grace)
-  board run <board> --for "<who>: <why>" [--grace 10] [--minutes N] [--wait] -- <command…>
+  board run <board> --as <who> --for "<why>" [--grace 10] [--minutes N] [--wait] -- <command…>
                                             hold it while the command runs, then for the grace (minutes)
   board renew <board> [--minutes N] [--as <who>]
   board drop <board> [--as <who>] [--force]
@@ -37,7 +37,8 @@ const HELP = `board — the desk's boards, who holds them, and who is waiting
   board serve [--port 4380]                 the desk page on 127.0.0.1
 
 <board> is a slug (fixture-c6), a mark (FC6), a MAC, or a /dev path.
-Who you are: --as <who>, else $BOARD_HOLDER. Files: $BOARD_HOME (~/.photomancer/desk).`;
+Who you are: --as <who>, else $BOARD_HOLDER — your whole session name, colons
+and all ("direct: wifi"). --for is only why. Files: $BOARD_HOME (~/.photomancer/desk).`;
 
 class UsageError extends Error {}
 
@@ -70,7 +71,7 @@ export async function main(argv: string[], env = process.env, deps: Deps = realD
       case "take":
         return await takeCommand(home, desk, deps, env, rest);
       case "run":
-        return await runCommand(home, desk, deps, rest);
+        return await runCommand(home, desk, deps, env, rest);
       case "renew":
         return renewCommand(home, desk, deps, env, rest);
       case "drop":
@@ -162,14 +163,15 @@ function show(home: string, desk: Desk, deps: Deps, args: string[]): number {
 
 async function takeCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, {
+    as: { type: "string" },
     for: { type: "string" },
     minutes: { type: "string" },
     pid: { type: "string" },
     wait: { type: "boolean" },
     timeout: { type: "string" },
   });
-  if (!values.for) throw new UsageError('take needs --for "<who>: <why>"');
-  const { view, name } = await acquire(home, desk, deps, need(positionals[0], "take <board>"), values.for, {
+  const holder = mustSayWho(values.as, env, "take");
+  const { view, name } = await acquire(home, desk, deps, need(positionals[0], "take <board>"), holder, values.for ?? "", {
     ...(values.minutes ? { minutes: number(values.minutes, "--minutes") } : {}),
     ...(values.pid ? { pid: number(values.pid, "--pid") } : {}),
     wait: values.wait === true,
@@ -190,20 +192,21 @@ const RUN_RENEW_MS = 60_000;
  * the run left behind. The command gets BOARD_HOLDER (so `just` recipes inside
  * pass their own lease check) and BOARD_DEV (the board's port).
  */
-async function runCommand(home: string, desk: Desk, deps: Deps, args: string[]): Promise<number> {
+async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, {
+    as: { type: "string" },
     for: { type: "string" },
     minutes: { type: "string" },
     grace: { type: "string" },
     wait: { type: "boolean" },
     timeout: { type: "string" },
   });
-  if (!values.for) throw new UsageError('run needs --for "<who>: <why>"');
+  const holder = mustSayWho(values.as, env, "run");
   const [ref, ...command] = positionals;
-  if (!ref || command.length === 0) throw new UsageError("usage: board run <board> --for \"<who>: <why>\" -- <command…>");
+  if (!ref || command.length === 0) throw new UsageError('usage: board run <board> --as <who> --for "<why>" -- <command…>');
   const minutes = values.minutes ? number(values.minutes, "--minutes") : 30;
   const grace = values.grace ? number(values.grace, "--grace") : 10;
-  const { view, name, mac, holder } = await acquire(home, desk, deps, ref, values.for, {
+  const { view, name, mac } = await acquire(home, desk, deps, ref, holder, values.for ?? "", {
     minutes,
     // The lease dies with this process if it is killed hard: a crashed run
     // must not hold a board for its whole grace.
@@ -255,10 +258,10 @@ async function acquire(
   desk: Desk,
   deps: Deps,
   ref: string,
-  forText: string,
+  holder: string,
+  purpose: string,
   options: AcquireOptions,
-): Promise<{ view: BoardView | undefined; name: string; mac: string; holder: string }> {
-  const { holder, purpose } = parseFor(forText);
+): Promise<{ view: BoardView | undefined; name: string; mac: string }> {
   const state = buildState(home, desk, deps);
   const view = resolveRef(state, ref);
   const mac = view?.mac ?? normalizeMac(ref);
@@ -290,7 +293,23 @@ async function acquire(
   console.error(`${name}: ${verb} by ${holder} (${timeLeft(result.lease, deps)})`);
   if (view?.board?.role === "art") console.error(`⚠️ ${name} is an art piece. Treat what is on it with care.`);
   for (const warning of view ? chipWarnings(view, undefined) : []) console.error(warning);
-  return { view, name, mac, holder };
+  return { view, name, mac };
+}
+
+/**
+ * Who is taking a board: `--as`, else $BOARD_HOLDER — never parsed out of
+ * `--for`. Session names carry colons ("direct: wifi", "direct: ota"), so a
+ * "<who>: <why>" split once made every director the same holder `direct`,
+ * and a take by one would have renewed — taken over — another's lease.
+ */
+function mustSayWho(as: string | undefined, env: NodeJS.ProcessEnv, verb: string): string {
+  const holder = (as ?? env.BOARD_HOLDER ?? "").trim();
+  if (!holder) {
+    throw new UsageError(
+      `${verb} needs to know who you are: --as "<your session name>" (or BOARD_HOLDER=…); --for is only why`,
+    );
+  }
+  return holder;
 }
 
 async function waitInLine(

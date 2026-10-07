@@ -44,13 +44,6 @@ export type TakeResult =
 
 export class LeaseError extends Error {}
 
-/** `--for "ota-director: power-cut soak"` → holder and purpose. */
-export function parseFor(text: string): { holder: string; purpose: string } {
-  const colon = text.indexOf(":");
-  if (colon < 0) return { holder: text.trim(), purpose: "" };
-  return { holder: text.slice(0, colon).trim(), purpose: text.slice(colon + 1).trim() };
-}
-
 export function isLive(lease: Lease, deps: Deps): boolean {
   if (Date.parse(lease.expires) <= deps.now().getTime()) return false;
   if (lease.pid !== undefined && !deps.alive(lease.pid)) return false;

@@ -69,17 +69,35 @@ describe("board (CLI over the fixture desk)", () => {
 
   test("take prints the port; a second taker is refused with exit 3 naming the holder", () => {
     const desk = setup();
-    const first = desk.run("take", "fc6", "--for", "ota: power-cut soak");
+    const first = desk.run("take", "fc6", "--as", "ota", "--for", "power-cut soak");
     expect(first).toMatchObject({ code: 0, stdout: "/dev/cu.usbmodem112401\n" });
-    const second = desk.run("take", "fixture-c6", "--for", "wifi: scan");
+    const second = desk.run("take", "fixture-c6", "--as", "wifi", "--for", "scan");
     expect(second.code).toBe(3);
     expect(second.stderr).toMatch(/FC6 fixture-c6 is held by ota until \d\d:\d\d \(30 min left\): power-cut soak/);
+  });
+
+  test("sessions whose names share a prefix are different holders (direct: ota vs direct: wifi)", () => {
+    const desk = setup();
+    expect(desk.run("take", "fc6", "--as", "direct: ota", "--for", "usb-speedup: timing").code).toBe(0);
+    const wifi = desk.run("take", "fc6", "--for", "PR B silicon re-check", { BOARD_HOLDER: "direct: wifi" });
+    expect(wifi.code).toBe(3);
+    expect(wifi.stderr).toContain("held by direct: ota until");
+    const lease = JSON.parse(desk.run("show", "fc6", "--json").stdout).lease;
+    expect(lease).toMatchObject({ holder: "direct: ota", purpose: "usb-speedup: timing" });
+  });
+
+  test("taking without saying who you are is refused, whatever --for says", () => {
+    const desk = setup();
+    const result = desk.run("take", "fc6", "--for", "direct: wifi: scan");
+    expect(result.code).toBe(1);
+    expect(result.stderr).toContain('take needs to know who you are: --as "<your session name>"');
+    expect(desk.run("check", "fc6").code).toBe(0);
   });
 
   test("check: 0 free or yours, 3 held, 4 art not held, 5 unknown; a chip mismatch is loud", () => {
     const desk = setup();
     expect(desk.run("check", "/dev/cu.usbmodem112401").code).toBe(0);
-    desk.run("take", "FS3", "--for", "ota: soak");
+    desk.run("take", "FS3", "--as", "ota", "--for", "soak");
     expect(desk.run("check", "fs3").code).toBe(3);
     expect(desk.run("check", "fs3", "--as", "ota").code).toBe(0);
     expect(desk.run("check", "fs3", { BOARD_HOLDER: "ota" }).code).toBe(0);
@@ -92,7 +110,7 @@ describe("board (CLI over the fixture desk)", () => {
 
   test("an art board can be taken on purpose, and then checks clear for its holder", () => {
     const desk = setup();
-    const taken = desk.run("take", "chk", "--for", "yona: update the piece");
+    const taken = desk.run("take", "chk", "--as", "yona", "--for", "update the piece");
     expect(taken.code).toBe(0);
     expect(taken.stderr).toContain("is an art piece");
     expect(desk.run("check", "chk", "--as", "yona").code).toBe(0);
@@ -104,14 +122,16 @@ describe("board (CLI over the fixture desk)", () => {
     const result = desk.run(
       "run",
       "fc6",
+      "--as",
+      "soak",
       "--for",
-      "soak: power cuts",
+      "power cuts",
       "--grace",
       "5",
       "--",
       "sh",
       "-c",
-      `echo "holder=$BOARD_HOLDER dev=$BOARD_DEV"; ${board} take fc6 --for "other: x" 2>/dev/null; echo "other=$?"; exit 7`,
+      `echo "holder=$BOARD_HOLDER dev=$BOARD_DEV"; ${board} take fc6 --as other --for x 2>/dev/null; echo "other=$?"; exit 7`,
     );
     expect(result.code).toBe(7);
     expect(result.stdout).toContain("holder=soak dev=/dev/cu.usbmodem112401");
@@ -125,7 +145,7 @@ describe("board (CLI over the fixture desk)", () => {
 
   test("drop is the holder's; --force takes it back", () => {
     const desk = setup();
-    desk.run("take", "fc6", "--for", "ota: soak");
+    desk.run("take", "fc6", "--as", "ota", "--for", "soak");
     expect(desk.run("drop", "fc6", "--as", "wifi").code).toBe(1);
     expect(desk.run("drop", "fc6", "--as", "wifi", "--force").code).toBe(0);
     expect(desk.run("check", "fc6").code).toBe(0);
@@ -155,7 +175,7 @@ describe("board (CLI over the fixture desk)", () => {
 
   test("power is refused on a board someone holds, and impossible off a switchable hub", () => {
     const desk = setup();
-    desk.run("take", "fs3", "--for", "ota: soak");
+    desk.run("take", "fs3", "--as", "ota", "--for", "soak");
     const held = desk.run("power-off", "fs3", "--as", "wifi");
     expect(held.code).toBe(3);
     desk.run("set", "chk", "role=test");

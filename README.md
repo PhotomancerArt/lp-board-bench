@@ -31,21 +31,24 @@ just install        # builds one binary: ~/.local/bin/board
 
 ```bash
 board list                                       # every board: mark, slug, role, port, hub, holder, the line
-board take fixture-c6 --for "ota-director: power-cut soak"   # 30 min; prints the port
-board take fixture-c6 --for "wifi: scan" --wait  # join the line instead of being refused
-board run fixture-c6 --for "ota: soak" -- ./soak.sh    # hold it for the whole run, + 10 min grace
-board renew fixture-c6 --as ota-director --minutes 60
-board drop fixture-c6 --as ota-director
+board take fixture-c6 --as "direct: ota" --for "power-cut soak"   # 30 min; prints the port
+board take fixture-c6 --as "direct: wifi" --for "scan" --wait   # join the line instead of being refused
+board run fixture-c6 --as "direct: ota" --for "soak" -- ./soak.sh   # hold it for the whole run, + 10 min grace
+board renew fixture-c6 --as "direct: ota" --minutes 60
+board drop fixture-c6 --as "direct: ota"
 board check /dev/cu.usbmodem112401 --as me       # what a flasher asks first (exit codes below)
-board power-cycle fixture-c6 --as ota-director
+board power-cycle fixture-c6 --as "direct: ota"
 board add --port /dev/cu.usbmodem2101 --slug c6-oak --mark OAK   # probes with espflash, registers
 board set c6-oak role=art lp_project=catalog/projects/playful-choker
 board serve                                      # http://127.0.0.1:4380/
 ```
 
-A board can be named by slug, mark, MAC, or `/dev` path. Who you are comes
-from `--as`, else `$BOARD_HOLDER`; `take` uses the `<who>` of
-`--for "<who>: <why>"`.
+A board can be named by slug, mark, MAC, or `/dev` path. **Who you are** comes
+from `--as`, else `$BOARD_HOLDER`, and nowhere else: use your whole session
+name, colons and all (`direct: wifi`). `take` and `run` refuse without one.
+`--for` is only why, free text. (It once also carried the holder, split at the
+first colon, which made `direct: ota` and `direct: wifi` the same holder
+`direct`.)
 
 `board check` exit codes, which other tools read: `0` free or yours, `3` held
 by someone else, `4` an art board you have not taken, `5` no such board.
@@ -60,7 +63,7 @@ the moment it exits.
 **For a long run, use `board run`** instead:
 
 ```bash
-board run fixture-c6 --for "ota-director: power-cut soak" --grace 15 -- scripts/ota/hw-power-cut.py …
+board run fixture-c6 --as "direct: ota" --for "power-cut soak" --grace 15 -- scripts/ota/hw-power-cut.py …
 ```
 
 It holds the board for as long as the command runs (renewing every minute, so
