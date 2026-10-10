@@ -34,6 +34,10 @@ export async function power(
   if (!location) {
     throw new PowerError("not on a switchable hub (uhubctl has never seen it on one)");
   }
+  // A remembered location is no use when uhubctl sees no hub at all.
+  if (desk.hubs()?.length === 0) {
+    throw new PowerError("not on a switchable hub (no switchable hub is attached to this machine)");
+  }
   const hubs = hubsOf(location);
   const switched = hubs.map((hub) => `${hub} port ${location.port}`);
   const on = () => {
