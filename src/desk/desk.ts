@@ -39,7 +39,13 @@ export function macDesk(): Desk {
     },
     hubs() {
       if (!Bun.which("uhubctl")) return undefined;
-      return parseUhubctl(run(["uhubctl"], 15_000));
+      try {
+        return parseUhubctl(run(["uhubctl"], 15_000));
+      } catch (err) {
+        // uhubctl installed but no switchable hub attached: no hubs, not a failure.
+        if (isNoHubsError(err)) return [];
+        throw err;
+      }
     },
     boardInfo(port) {
       if (!Bun.which("espflash")) throw new DeskError("espflash is not installed");
@@ -101,6 +107,15 @@ export function fixtureDesk(dir: string): Desk {
       appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}\n`);
     },
   };
+}
+
+/**
+ * `uhubctl` with no arguments exits 1 with "No compatible devices detected!"
+ * when no switchable hub is attached. That is an empty hub list; any other
+ * failure (a timeout, a different exit code or message) is still an error.
+ */
+export function isNoHubsError(err: unknown): boolean {
+  return err instanceof DeskError && /^uhubctl exited 1: .*No compatible devices detected!/s.test(err.message);
 }
 
 function run(cmd: string[], timeoutMs: number, withStderr = false): string {

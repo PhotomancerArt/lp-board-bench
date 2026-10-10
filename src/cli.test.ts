@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { cpSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { tempHome } from "../test/fake_deps.ts";
+import { DeskError, isNoHubsError } from "./desk/desk.ts";
 import { registryPath } from "./paths.ts";
 
 // The fixture desk: 02:…:01 a C6 on hub 1-1.2 port 4, 02:…:02 an S3 on 1-1.2.3
@@ -182,6 +183,34 @@ describe("board (CLI over the fixture desk)", () => {
     const offHub = desk.run("power-off", "chk");
     expect(offHub.code).toBe(1);
     expect(offHub.stderr).toContain("not on a switchable hub");
+  });
+
+  test("uhubctl installed but no hub attached: every board still lists with its port, power is refused by name", () => {
+    const desk = setup();
+    // The first call has learned where fc6 lives; then the hubs go away.
+    expect(desk.run("list").code).toBe(0);
+    writeFileSync(join(desk.fixture, "uhubctl.txt"), "");
+    const listed = desk.run("list");
+    expect(listed.code).toBe(0);
+    expect(listed.stdout).toMatch(/FC6\s+fixture-c6\s+fixture\s+esp32c6\s+02:00:00:00:00:01\s+\/dev\/cu\.usbmodem112401/);
+    expect(listed.stdout).toMatch(/FS3\s+fixture-s3\s+fixture\s+esp32s3\s+02:00:00:00:00:02\s+\/dev\/cu\.usbmodem1123201/);
+    expect(desk.run("take", "fc6", "--as", "ota", "--for", "no hub").stdout).toBe("/dev/cu.usbmodem112401\n");
+    const state = JSON.parse(desk.run("list", "--json").stdout);
+    expect(state.hubsAvailable).toBe(true);
+    const cycle = desk.run("power-cycle", "fc6", "--as", "ota", "--off-secs", "0");
+    expect(cycle.code).toBe(1);
+    expect(cycle.stderr).toContain("not on a switchable hub");
+    expect(existsSync(join(desk.fixture, "power.log"))).toBe(false);
+  });
+});
+
+describe("uhubctl with no hub attached", () => {
+  test("only exit 1 with its 'No compatible devices detected!' message reads as no hubs", () => {
+    expect(isNoHubsError(new DeskError("uhubctl exited 1: No compatible devices detected!"))).toBe(true);
+    expect(isNoHubsError(new DeskError("uhubctl exited 2: No compatible devices detected!"))).toBe(false);
+    expect(isNoHubsError(new DeskError("uhubctl exited 1: permission denied"))).toBe(false);
+    expect(isNoHubsError(new DeskError("uhubctl timed out after 15 s: No compatible devices detected!"))).toBe(false);
+    expect(isNoHubsError(new Error("uhubctl exited 1: No compatible devices detected!"))).toBe(false);
   });
 });
 
