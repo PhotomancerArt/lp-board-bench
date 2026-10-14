@@ -18,11 +18,20 @@ export interface HubPort {
   mac?: string;
 }
 
+/**
+ * How a hub switches port power, as uhubctl marks it at the end of the hub's
+ * line: `ppps` per port, `ganged` all ports at once, `nops` not at all. Only a
+ * `ppps` hub can cut one board's power.
+ */
+export type PowerSwitching = "ppps" | "ganged" | "nops";
+
 export interface Hub {
   /** uhubctl's location, `1-1.2.3`. */
   path: string;
   vidPid: string;
   description: string;
+  /** Undefined when uhubctl's line did not say. */
+  switching?: PowerSwitching;
   ports: HubPort[];
 }
 
@@ -38,7 +47,9 @@ export function parseUhubctl(text: string): Hub[] {
   for (const line of text.split("\n")) {
     const head = /^Current status for hub (\S+) \[([0-9a-f]{4}:[0-9a-f]{4}) ?([^\]]*)\]/.exec(line);
     if (head) {
-      hubs.push({ path: head[1]!, vidPid: head[2]!, description: head[3]!.trim(), ports: [] });
+      const description = head[3]!.trim();
+      const switching = powerSwitching(description);
+      hubs.push({ path: head[1]!, vidPid: head[2]!, description, ...(switching ? { switching } : {}), ports: [] });
       continue;
     }
     const port = /^\s+Port (\d+): \S+(.*?)(?:\[([0-9a-f]{4}:[0-9a-f]{4}) ?([^\]]*)\])?\s*$/.exec(line);
@@ -57,6 +68,24 @@ export function parseUhubctl(text: string): Hub[] {
     }
   }
   return hubs;
+}
+
+/**
+ * The switching mode at the end of a hub's description
+ * (`VIA Labs, Inc. USB2.0 Hub, USB 2.10, 4 ports, ppps`). A hub plugged into
+ * another hub's port carries the same description there, which is how a hub
+ * uhubctl will not list (it lists only `ppps` hubs) still says what it is.
+ */
+export function powerSwitching(description: string): PowerSwitching | undefined {
+  const mode = /,\s*(ppps|ganged|nops)\s*$/.exec(description)?.[1];
+  return mode as PowerSwitching | undefined;
+}
+
+/** `1-1.2.3` → `{ hub: "1-1.2", port: 3 }`; a root hub (`1-1`) has no parent uhubctl lists. */
+export function parentOf(path: string): { hub: string; port: number } | undefined {
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return undefined;
+  return { hub: path.slice(0, dot), port: Number(path.slice(dot + 1)) };
 }
 
 /**

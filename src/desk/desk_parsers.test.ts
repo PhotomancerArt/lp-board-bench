@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { parseBoardInfo } from "./espflash.ts";
-import { locate, parseUhubctl, twinOf } from "./hubs.ts";
+import { locate, parentOf, parseUhubctl, powerSwitching, twinOf } from "./hubs.ts";
 import { parseSystemProfiler, portForLocation } from "./presence.ts";
 
 const FIXTURES = join(import.meta.dir, "..", "..", "test", "fixtures", "desk");
@@ -57,6 +57,19 @@ describe("hubs (uhubctl)", () => {
       [2, false, false],
       [4, true, true],
     ]);
+  });
+
+  test("reads how each hub switches power, and a hub uhubctl will not list from its parent's port", () => {
+    expect(hubs.find((hub) => hub.path === "1-1.2")!.switching).toBe("ppps");
+    // uhubctl lists only ppps hubs; the ganged CH hub shows up only as a device on 1-1 port 3.
+    expect(hubs.some((hub) => hub.path === "1-1.3")).toBe(false);
+    const parent = parentOf("1-1.3")!;
+    expect(parent).toEqual({ hub: "1-1", port: 3 });
+    const seat = hubs.find((hub) => hub.path === parent.hub)!.ports.find((port) => port.number === parent.port)!;
+    expect(powerSwitching(seat.description!)).toBe("ganged");
+    expect(powerSwitching("Some Hub, USB 2.00, 4 ports, nops")).toBe("nops");
+    expect(powerSwitching("Espressif USB JTAG/serial debug unit 02:00:00:00:00:01")).toBeUndefined();
+    expect(parentOf("1-1")).toBeUndefined();
   });
 
   test("a VIA USB 2 hub's twin is the USB 3 hub at the same path under the other root port", () => {

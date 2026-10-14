@@ -185,6 +185,34 @@ describe("board (CLI over the fixture desk)", () => {
     expect(offHub.stderr).toContain("not on a switchable hub");
   });
 
+  test("power-cycle on a hub that keeps the power on exits non-zero, says why, and leaves the port powered", () => {
+    const desk = setup();
+    writeFileSync(join(desk.fixture, "ignores-power.txt"), "1-1.2\n1-2.2\n");
+    const cycle = desk.run("power-cycle", "fc6", "--off-secs", "0");
+    expect(cycle.code).toBe(1);
+    expect(cycle.stdout).toBe("");
+    expect(cycle.stderr).toContain(
+      "FC6 fixture-c6: power-cycle failed on hub 1-1.2 port 4 and 1-2.2 port 4: power did not drop: " +
+        "hub 1-1.2 port 4 and hub 1-2.2 port 4 still report power after uhubctl switched them off",
+    );
+    expect(cycle.stderr).toContain("power was switched back on");
+    expect(desk.run("list").stdout).toMatch(/FC6\s+fixture-c6\s.*1-1\.2 p4 \(\+twin\)\s+free/);
+  });
+
+  test("power-cycle on a board behind a ganged hub exits non-zero, names the hub's mode, and switches nothing", () => {
+    const desk = setup();
+    desk.run("set", "chk", "role=test");
+    // Last seen through a hub the CH ganged hub on 1-1 port 3 now stands for.
+    writeFileSync(join(desk.home, "hub-ports.json"), JSON.stringify({ "02:00:00:00:00:03": { hub: "1-1.3", port: 2 } }));
+    const cycle = desk.run("power-cycle", "chk", "--off-secs", "0");
+    expect(cycle.code).toBe(1);
+    expect(cycle.stderr).toContain(
+      "CHK art-choker: cannot switch power on hub 1-1.3 port 2: the hub (1a86:8095 USB Hub, USB 2.00, 4 ports, ganged) " +
+        "does not support per-port power switching: uhubctl marks it ganged",
+    );
+    expect(existsSync(join(desk.fixture, "power.log"))).toBe(false);
+  });
+
   test("uhubctl installed but no hub attached: every board still lists with its port, power is refused by name", () => {
     const desk = setup();
     // The first call has learned where fc6 lives; then the hubs go away.
@@ -233,7 +261,7 @@ function setup() {
       const env = args.find((arg): arg is Record<string, string> => typeof arg === "object") ?? {};
       const argv = args.filter((arg): arg is string => typeof arg === "string");
       const result = Bun.spawnSync([process.execPath, cli, ...argv], {
-        env: { PATH: process.env.PATH ?? "", HOME: home, BOARD_HOME: home, BOARD_FAKE_DESK: fixture, BOARD_SETTLE_MS: "0", ...env },
+        env: { PATH: process.env.PATH ?? "", HOME: home, BOARD_HOME: home, BOARD_FAKE_DESK: fixture, BOARD_SETTLE_MS: "0", BOARD_LEAVE_MS: "300", ...env },
       });
       return { code: result.exitCode ?? -1, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
     },

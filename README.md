@@ -37,7 +37,7 @@ board run fixture-c6 --as "direct: ota" --for "soak" -- ./soak.sh   # hold it fo
 board renew fixture-c6 --as "direct: ota" --minutes 60
 board drop fixture-c6 --as "direct: ota"
 board check /dev/cu.usbmodem112401 --as me       # what a flasher asks first (exit codes below)
-board power-cycle fixture-c6 --as "direct: ota"
+board power-cycle fixture-c6 --as "direct: ota"   # prints the port it came back on; non-zero if the hub did not switch
 board add --port /dev/cu.usbmodem2101 --slug c6-oak --mark OAK   # probes with espflash, registers
 board set c6-oak role=art lp_project=catalog/projects/playful-choker
 board serve                                      # http://127.0.0.1:4380/
@@ -109,7 +109,7 @@ this repo:
 | `waiting/<MAC>/<id>.json` | the line for a board |
 | `images/<MAC>.board.svg`, `<MAC>.art.svg` | pictures, written by whoever can draw them (LightPlayer's `lp-cli hardware desk-images`); an entry's `image` names a photo instead |
 | `log/serve.log` | the page service's output |
-| `hub-ports.json` | where each board was last seen on a hub, so `power-on` finds a board that is off |
+| `hub-ports.json` | where each board was last seen on a hub, and the hub's twin, so `power-on` finds a board that is off. A twin once seen is kept: delete the board's entry if its hub really has no twin any more |
 | `.lock/` | the mutex every read-modify-write takes |
 
 Writes are a temp file plus a rename, under the lock, so a reader never sees
@@ -125,6 +125,29 @@ macOS does not notice a port being switched off: it keeps listing the device,
 and its `/dev` node, until power comes back. So `board` trusts the hub, not the
 host: off is confirmed by the hub reporting the port empty, and back by the hub
 seeing the board again plus a short settle for the host to re-enumerate.
+
+### When it cannot, it fails
+
+`power-cycle`, `power-off` and `power-on` exit non-zero, with one line naming
+the board, the hub and why, whenever the hub cannot be shown to have switched
+the board's power. Nothing is reported as done that the hub did not confirm:
+
+| What uhubctl shows | What `board` says |
+|---|---|
+| the hub's line ends `ganged` or `nops`, not `ppps` | the hub does not support per-port power switching; nothing is switched |
+| the hub is not listed at all (uhubctl lists only `ppps` hubs; a `ganged` one shows up only as a device on its parent's port, which is where `board` reads its mode) | the same, or "uhubctl does not list that hub"; nothing is switched |
+| the twin is not listed, though the board was once seen with one | the twin cannot be switched, and switching one half leaves VBUS up; nothing is switched |
+| the port the board was last seen on has power and someone else (or nothing) on it | the board is not there; nothing is switched, so nobody else's port is cut |
+| after off, a switched port (either twin) still reads `power` | power did not drop: the hub does not really switch this port |
+| after off, the ports read off but the board is still on the hub | power did not drop: a twin not switched, or the board is powered another way |
+| after on, a switched port still reads `off` | the hub did not switch the port back on |
+
+A failed `power-off` or `power-cycle` switches back on what it switched off
+before it reports, so a failure leaves the port as it found it.
+
+What uhubctl cannot show: a hub that marks itself `ppps`, reports the port
+off and empty, and keeps VBUS up anyway. That reads as a good cycle. The only
+witness left is the board itself (did it reboot?), which `board` does not ask.
 
 ## Development
 
