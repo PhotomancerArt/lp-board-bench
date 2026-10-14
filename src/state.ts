@@ -64,7 +64,8 @@ export function buildState(home: string, desk: Desk, deps: Deps): DeskState {
       if (lease) view.lease = lease;
       view.line = lineFor(home, view.mac, deps);
     }
-    const found = hubs && view.device ? locateView(hubs, view) : undefined;
+    const located = hubs && view.device ? locateView(hubs, view) : undefined;
+    const found = located && view.mac ? keepTwin(located, memory[view.mac]) : located;
     if (found) {
       view.hub = found;
       if (view.mac && JSON.stringify(memory[view.mac]) !== JSON.stringify(found)) {
@@ -126,6 +127,17 @@ function matchDevice(board: Board, boards: Board[], devices: UsbDevice[]): UsbDe
     if (sameKindBoards.length === 1 && sameKindDevices.length === 1) return sameKindDevices[0];
   }
   return undefined;
+}
+
+/**
+ * A twin seen once stays: a hub on the same port that lists without its twin
+ * today has half of itself missing (the USB 3 side did not enumerate), and
+ * switching only the other half leaves VBUS up. Power then fails by name
+ * instead of switching one half and reporting success.
+ */
+function keepTwin(found: HubLocation, remembered: HubLocation | undefined): HubLocation {
+  const sameSeat = remembered && remembered.hub === found.hub && remembered.port === found.port;
+  return !found.twin && sameSeat && remembered.twin ? { ...found, twin: remembered.twin } : found;
 }
 
 function locateView(hubs: Hub[], view: BoardView): HubLocation | undefined {
