@@ -16,3 +16,7 @@ and personal device names by placeholders.
 Boards in them: 02:…:01 a C6 on hub 1-1.2 port 4, 02:…:02 an S3 on hub
 1-1.2.3 port 2, a CH340 bridge (1a86:7522, no serial) on 1-1.2.3 port 3, and
 02:…:03 a C6 on a non-switchable hub.
+
+Not captured: `ignores-power.txt`, which a test writes to make the fixture
+desk's hubs at those paths take a power request and change nothing (see
+`fixtureDesk` in `src/desk/desk.ts`).

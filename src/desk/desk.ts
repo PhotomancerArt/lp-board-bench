@@ -60,7 +60,10 @@ export function macDesk(): Desk {
 /**
  * A desk read from files. Power switches are appended to `power.log` in the
  * same directory, and a switched-off port drops its device from the listing,
- * so a test can watch a power cycle happen.
+ * so a test can watch a power cycle happen. A hub named in
+ * `ignores-power.txt` (one path per line) takes the request and changes
+ * nothing, as a hub that only claims per-port switching does: the request
+ * is logged with `ignored` after it.
  */
 export function fixtureDesk(dir: string): Desk {
   const read = (name: string) => readFileSync(join(dir, name), "utf8");
@@ -68,8 +71,8 @@ export function fixtureDesk(dir: string): Desk {
     const log = existsSync(join(dir, "power.log")) ? read("power.log") : "";
     const state = new Map<string, boolean>();
     for (const line of log.split("\n")) {
-      const [hub, port, action] = line.split(" ");
-      if (hub && port && action) state.set(`${hub} ${port}`, action === "off");
+      const [hub, port, action, ignored] = line.split(" ");
+      if (hub && port && action && !ignored) state.set(`${hub} ${port}`, action === "off");
     }
     return state;
   };
@@ -104,7 +107,8 @@ export function fixtureDesk(dir: string): Desk {
       return parseBoardInfo(read(name));
     },
     setPower(hub, port, on) {
-      appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}\n`);
+      const ignores = existsSync(join(dir, "ignores-power.txt")) && read("ignores-power.txt").split("\n").includes(hub);
+      appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}${ignores ? " ignored" : ""}\n`);
     },
   };
 }
