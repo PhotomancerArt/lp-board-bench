@@ -484,6 +484,7 @@ async function powerCommand(
   const result = await power(desk, view, action, {
     ...(values["off-secs"] ? { offSeconds: number(values["off-secs"], "--off-secs") } : {}),
   });
+  for (const warning of result.warnings) console.error(warning);
   console.error(`${viewName(view)}: power ${action} on ${result.switched.join(" and ")}`);
   if (action !== "off") {
     if (result.port) console.log(result.port);
