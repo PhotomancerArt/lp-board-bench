@@ -8,10 +8,16 @@
  * request, or a board that stays on the bus are all errors that name the
  * board, the hub and why. A failed `off` or `cycle` switches back on what it
  * switched off, so a failure leaves the port as it found it.
+ *
+ * A uhubctl that hangs is killed at its deadline (`timed_run.ts`) and its
+ * exit is not trusted: the hub's next listing decides. Switched as asked is
+ * a success with a warning that says it hung; not switched is a failure
+ * that says it hung.
  */
 import type { Desk } from "./desk/desk.ts";
 import { parentOf, powerSwitching, twinOf, type Hub, type HubLocation, type HubPort } from "./desk/hubs.ts";
 import { vidPid } from "./desk/presence.ts";
+import { HungError } from "./desk/timed_run.ts";
 import { normalizeMac } from "./mac.ts";
 import { viewName, type BoardView } from "./state.ts";
 
@@ -35,6 +41,8 @@ export interface PowerResult {
   /** The board's port after the action, when it is back on the bus. */
   port?: string;
   switched: string[];
+  /** One line each: a uhubctl that hung and was killed, though the hub shows its switch took effect. */
+  warnings: string[];
 }
 
 export async function power(
@@ -48,7 +56,12 @@ export async function power(
   if (!location) {
     throw new PowerError(`${name} is not on a switchable hub (uhubctl has never seen it on one)`);
   }
-  const live = desk.hubs();
+  let live: Hub[] | undefined;
+  try {
+    live = await desk.hubs();
+  } catch (err) {
+    throw new PowerError(`${name}: power-${action} failed before anything was switched: could not list the hubs: ${message(err)}`);
+  }
   // A remembered location is no use when uhubctl sees no hub at all.
   if (!live || live.length === 0) {
     throw new PowerError(`${name} is not on a switchable hub (no switchable hub is attached to this machine)`);
@@ -59,49 +72,72 @@ export async function power(
   const switched = hubs.map((hub) => `${hub} port ${location.port}`);
   const failed = (why: string) => new PowerError(`${name}: power-${action} failed on hub ${switched.join(" and ")}: ${why}`);
   const leave = options.leaveSeconds ?? leaveSeconds();
+  const warnings: string[] = [];
 
-  const switchAll = (on: boolean) => {
+  /**
+   * Switches every hub; returns what hung. A uhubctl killed past its
+   * deadline may or may not have switched (it can hang on its way out, in
+   * libusb_exit, after the port has switched), so its exit is not trusted:
+   * the hub's next listing decides, in waitForOff and waitForOn.
+   */
+  const switchAll = async (on: boolean): Promise<string[]> => {
+    const hung: string[] = [];
     for (const hub of hubs) {
+      const what = `hub ${hub} port ${location.port} ${on ? "on" : "off"}`;
       try {
-        desk.setPower(hub, location.port, on);
+        await desk.setPower(hub, location.port, on);
       } catch (err) {
-        throw new Error(`uhubctl could not switch hub ${hub} port ${location.port} ${on ? "on" : "off"} (${message(err)})`);
+        if (err instanceof HungError && err.stillRunning === undefined) {
+          hung.push(`uhubctl hung for ${err.seconds} s switching ${what} and was killed`);
+          continue;
+        }
+        throw new Error(`uhubctl could not switch ${what} (${message(err)})`);
       }
     }
+    return hung;
   };
   /** Back on, after a failed off; says how that went, for the error. */
-  const restore = (): string => {
+  const restore = async (): Promise<string> => {
     try {
-      switchAll(true);
-      return "power was switched back on";
+      const hung = await switchAll(true);
+      return hung.length === 0 ? "power was switched back on" : `power was switched back on, unconfirmed: ${hung.join("; ")}`;
     } catch (err) {
       return `and switching power back on failed too: ${message(err)}`;
     }
   };
+  /** What hung, then why the hub says the switch did not happen. */
+  const despite = (hung: string[], why: string) => [...hung, why].join("; ");
+  const tookEffect = (hung: string[], state: string) => {
+    for (const line of hung) warnings.push(`⚠️ ${name}: ${line}; the hub shows the port ${state}, so the switch took effect`);
+  };
 
   if (action === "off" || action === "cycle") {
+    let hung: string[];
     try {
-      switchAll(false);
+      hung = await switchAll(false);
     } catch (err) {
-      throw failed(`${message(err)}; ${restore()}`);
+      throw failed(`${message(err)}; ${await restore()}`);
     }
     // The hub is the witness, not the host: macOS keeps the device node (and
     // system_profiler keeps listing it) for as long as the port stays off,
     // and only notices on power-up. Measured on the desk, 2026-10-06.
     const why = await waitForOff(desk, hubs, location, leave);
-    if (why) throw failed(`${why}; ${restore()}`);
+    if (why) throw failed(`${despite(hung, why)}; ${await restore()}`);
+    tookEffect(hung, "off");
   }
-  if (action === "off") return { switched };
+  if (action === "off") return { switched, warnings };
   if (action === "cycle") await Bun.sleep((options.offSeconds ?? 2) * 1000);
+  let hung: string[];
   try {
-    switchAll(true);
+    hung = await switchAll(true);
   } catch (err) {
     throw failed(message(err));
   }
   const why = await waitForOn(desk, hubs, location, leave);
-  if (why) throw failed(why);
+  if (why) throw failed(despite(hung, why));
+  tookEffect(hung, "on");
   const port = await waitForReturn(desk, view, location, options.returnSeconds ?? 15, options.settleMs ?? settleMs());
-  return { switched, ...(port ? { port } : {}) };
+  return { switched, warnings, ...(port ? { port } : {}) };
 }
 
 /**
@@ -168,7 +204,8 @@ function checkBoardOnPort(live: Hub[], location: HubLocation, view: BoardView, n
 async function waitForOff(desk: Desk, hubs: string[], location: HubLocation, seconds: number): Promise<string | undefined> {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    const live = desk.hubs() ?? [];
+    const live = await listOrWhy(desk);
+    if (typeof live === "string") return live;
     const powered = hubs.filter((hub) => portOf(live, { hub, port: location.port })?.powered !== false);
     const stillThere = portOf(live, location)?.connected === true;
     if (powered.length === 0 && !stillThere) return undefined;
@@ -192,7 +229,8 @@ async function waitForOff(desk: Desk, hubs: string[], location: HubLocation, sec
 async function waitForOn(desk: Desk, hubs: string[], location: HubLocation, seconds: number): Promise<string | undefined> {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    const live = desk.hubs() ?? [];
+    const live = await listOrWhy(desk);
+    if (typeof live === "string") return live;
     const off = hubs.filter((hub) => portOf(live, { hub, port: location.port })?.powered !== true);
     if (off.length === 0) return undefined;
     if (Date.now() >= deadline) {
@@ -201,6 +239,15 @@ async function waitForOn(desk: Desk, hubs: string[], location: HubLocation, seco
       return `${ports} still ${one ? "reads" : "read"} no power after uhubctl switched ${one ? "it" : "them"} on; the hub did not switch the port`;
     }
     await Bun.sleep(250);
+  }
+}
+
+/** The hubs as a fresh, timed uhubctl run lists them, or why they could not be read. */
+async function listOrWhy(desk: Desk): Promise<Hub[] | string> {
+  try {
+    return (await desk.hubs()) ?? [];
+  } catch (err) {
+    return `the hub's ports could not be read back: ${message(err)}`;
   }
 }
 
@@ -232,7 +279,10 @@ async function waitForReturn(
   const deadline = Date.now() + seconds * 1000;
   let seenOnHubAt: number | undefined;
   while (Date.now() < deadline) {
-    const onHub = holdsBoard(portOf(desk.hubs() ?? [], location), view);
+    const live = await listOrWhy(desk);
+    // A listing that fails now will not come back within the wait.
+    if (typeof live === "string") return undefined;
+    const onHub = holdsBoard(portOf(live, location), view);
     if (onHub) seenOnHubAt ??= Date.now();
     const device = findDevice(desk, view);
     if (onHub && device?.port && Date.now() - seenOnHubAt! >= settle) return device.port;

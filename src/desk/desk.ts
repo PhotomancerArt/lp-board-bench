@@ -7,20 +7,22 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { DeskError } from "./desk_error.ts";
 import { parseBoardInfo, type BoardInfo } from "./espflash.ts";
 import { parseUhubctl, type Hub } from "./hubs.ts";
 import { parseSystemProfiler, type UsbDevice } from "./presence.ts";
+import { timedRun, uhubctlTimeoutMs } from "./timed_run.ts";
 
 export interface Desk {
   usbDevices(): UsbDevice[];
-  /** Undefined when this machine has no uhubctl. */
-  hubs(): Hub[] | undefined;
+  /** Undefined when this machine has no uhubctl. Every uhubctl run is timed (see `timed_run.ts`). */
+  hubs(): Promise<Hub[] | undefined>;
   /** Resets the board. */
   boardInfo(port: string): BoardInfo;
-  setPower(hub: string, port: number, on: boolean): void;
+  setPower(hub: string, port: number, on: boolean): Promise<void>;
 }
 
-export class DeskError extends Error {}
+export { DeskError };
 
 export function deskFromEnv(env: Record<string, string | undefined> = process.env): Desk {
   const fake = env.BOARD_FAKE_DESK;
@@ -37,10 +39,10 @@ export function macDesk(): Desk {
         .map((name) => `/dev/${name}`);
       return parseSystemProfiler(JSON.parse(json), nodes);
     },
-    hubs() {
+    async hubs() {
       if (!Bun.which("uhubctl")) return undefined;
       try {
-        return parseUhubctl(run(["uhubctl"], 15_000));
+        return parseUhubctl(await timedRun(["uhubctl"], { timeoutMs: uhubctlTimeoutMs() }));
       } catch (err) {
         // uhubctl installed but no switchable hub attached: no hubs, not a failure.
         if (isNoHubsError(err)) return [];
@@ -51,8 +53,8 @@ export function macDesk(): Desk {
       if (!Bun.which("espflash")) throw new DeskError("espflash is not installed");
       return parseBoardInfo(run(["espflash", "board-info", "--port", port], 30_000, true));
     },
-    setPower(hub, port, on) {
-      run(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], 15_000);
+    async setPower(hub, port, on) {
+      await timedRun(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], { timeoutMs: uhubctlTimeoutMs() });
     },
   };
 }
@@ -64,8 +66,17 @@ export function macDesk(): Desk {
  * `ignores-power.txt` (one path per line) takes the request and changes
  * nothing, as a hub that only claims per-port switching does: the request
  * is logged with `ignored` after it.
+ *
+ * `hangs-power.txt` makes a request hang as a deadlocked uhubctl does: one
+ * `<hub> <on|off> [unswitched] [ignores-term]` per line. The switch takes
+ * effect (or, with `unswitched`, does not, logged with `hung` after it),
+ * then a stand-in child sleeps through the uhubctl deadline and is killed
+ * by the same timed run the real desk uses (`ignores-term`: it ignores
+ * SIGTERM, so SIGKILL is needed). Each stand-in appends its pid to
+ * `hung.pids`, so a test can check it is gone.
  */
-export function fixtureDesk(dir: string): Desk {
+export function fixtureDesk(dir: string, options: { uhubctlTimeoutMs?: number; killGraceMs?: number } = {}): Desk {
+  const timeoutMs = options.uhubctlTimeoutMs ?? uhubctlTimeoutMs();
   const read = (name: string) => readFileSync(join(dir, name), "utf8");
   const off = () => {
     const log = existsSync(join(dir, "power.log")) ? read("power.log") : "";
@@ -88,7 +99,7 @@ export function fixtureDesk(dir: string): Desk {
         device.serial ? !offMacs.has(device.serial) : !offKinds.has(`${device.vid}:${device.pid}`),
       );
     },
-    hubs() {
+    async hubs() {
       if (!existsSync(join(dir, "uhubctl.txt"))) return undefined;
       // A switched-off port reads as uhubctl prints one: off, nothing attached.
       const switchedOff = off();
@@ -106,9 +117,25 @@ export function fixtureDesk(dir: string): Desk {
       if (!name) throw new DeskError(`espflash could not connect to ${port}`);
       return parseBoardInfo(read(name));
     },
-    setPower(hub, port, on) {
+    async setPower(hub, port, on) {
+      const action = on ? "on" : "off";
       const ignores = existsSync(join(dir, "ignores-power.txt")) && read("ignores-power.txt").split("\n").includes(hub);
-      appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}${ignores ? " ignored" : ""}\n`);
+      const hang = existsSync(join(dir, "hangs-power.txt"))
+        ? read("hangs-power.txt")
+            .split("\n")
+            .map((line) => line.trim().split(/\s+/))
+            .find(([path, which]) => path === hub && which === action)
+        : undefined;
+      const unswitched = hang?.includes("unswitched") === true;
+      const note = ignores ? " ignored" : unswitched ? " hung" : "";
+      appendFileSync(join(dir, "power.log"), `${hub} ${port} ${action}${note}\n`);
+      if (!hang) return;
+      const trap = hang.includes("ignores-term") ? "trap '' TERM; " : "";
+      await timedRun(["sh", "-c", `echo $$ >> "$1"; ${trap}exec sleep 3600`, "sh", join(dir, "hung.pids")], {
+        timeoutMs,
+        ...(options.killGraceMs !== undefined ? { graceMs: options.killGraceMs } : {}),
+        label: `uhubctl -l ${hub} -p ${port} -a ${action} -e`,
+      });
     },
   };
 }
@@ -122,6 +149,11 @@ export function isNoHubsError(err: unknown): boolean {
   return err instanceof DeskError && /^uhubctl exited 1: .*No compatible devices detected!/s.test(err.message);
 }
 
+/**
+ * system_profiler and espflash, run synchronously. Bun 1.1.18 ignores the
+ * `timeout` here (see `timed_run.ts`), so these runs are not actually
+ * bounded yet; uhubctl, which has hung, goes through `timedRun` instead.
+ */
 function run(cmd: string[], timeoutMs: number, withStderr = false): string {
   const result = Bun.spawnSync(cmd, { stdout: "pipe", stderr: "pipe", timeout: timeoutMs });
   const out = result.stdout.toString();

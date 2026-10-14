@@ -199,6 +199,33 @@ describe("board (CLI over the fixture desk)", () => {
     expect(desk.run("list").stdout).toMatch(/FC6\s+fixture-c6\s.*1-1\.2 p4 \(\+twin\)\s+free/);
   });
 
+  test("power-cycle where uhubctl hangs after switching: the child is killed, the hub decides, and it succeeds with a warning", () => {
+    const desk = setup();
+    writeFileSync(join(desk.fixture, "hangs-power.txt"), "1-1.2 on\n");
+    const cycle = desk.run("power-cycle", "fc6", "--off-secs", "0", { BOARD_UHUBCTL_TIMEOUT_MS: "300" });
+    expect(cycle.code).toBe(0);
+    expect(cycle.stdout).toBe("/dev/cu.usbmodem112401\n");
+    expect(cycle.stderr).toContain(
+      "⚠️ FC6 fixture-c6: uhubctl hung for 0.3 s switching hub 1-1.2 port 4 on and was killed; the hub shows the port on, so the switch took effect\n",
+    );
+    expect(cycle.stderr).toContain("FC6 fixture-c6: power cycle on 1-1.2 port 4 and 1-2.2 port 4");
+    expect(stillRunning(desk.fixture)).toEqual([]);
+  });
+
+  test("power-on where uhubctl hangs and the port stays off exits non-zero and says uhubctl hung", () => {
+    const desk = setup();
+    expect(desk.run("power-off", "fc6").code).toBe(0);
+    writeFileSync(join(desk.fixture, "hangs-power.txt"), "1-1.2 on unswitched\n1-2.2 on unswitched\n");
+    const on = desk.run("power-on", "fc6", { BOARD_UHUBCTL_TIMEOUT_MS: "300" });
+    expect(on.code).toBe(1);
+    expect(on.stdout).toBe("");
+    expect(on.stderr).toContain(
+      "FC6 fixture-c6: power-on failed on hub 1-1.2 port 4 and 1-2.2 port 4: uhubctl hung for 0.3 s switching hub 1-1.2 port 4 on and was killed;",
+    );
+    expect(on.stderr).toContain("still read no power");
+    expect(stillRunning(desk.fixture)).toEqual([]);
+  });
+
   test("power-cycle on a board behind a ganged hub exits non-zero, names the hub's mode, and switches nothing", () => {
     const desk = setup();
     desk.run("set", "chk", "role=test");
@@ -266,4 +293,19 @@ function setup() {
       return { code: result.exitCode ?? -1, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
     },
   };
+}
+
+/** The fixture's hung uhubctl stand-ins that are still running: there should be none. */
+function stillRunning(fixture: string): number[] {
+  const file = join(fixture, "hung.pids");
+  const pids = existsSync(file) ? readFileSync(file, "utf8").split("\n").filter(Boolean).map(Number) : [];
+  if (pids.length === 0) throw new Error("no uhubctl stand-in hung: the hang knob did not fire");
+  return pids.filter((pid) => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }

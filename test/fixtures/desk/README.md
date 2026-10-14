@@ -18,5 +18,7 @@ Boards in them: 02:…:01 a C6 on hub 1-1.2 port 4, 02:…:02 an S3 on hub
 02:…:03 a C6 on a non-switchable hub.
 
 Not captured: `ignores-power.txt`, which a test writes to make the fixture
-desk's hubs at those paths take a power request and change nothing (see
-`fixtureDesk` in `src/desk/desk.ts`).
+desk's hubs at those paths take a power request and change nothing, and
+`hangs-power.txt`, which makes a request hang the way a deadlocked uhubctl
+does, so the timed run has a child to kill (see `fixtureDesk` in
+`src/desk/desk.ts`).

@@ -145,6 +145,26 @@ the board's power. Nothing is reported as done that the hub did not confirm:
 A failed `power-off` or `power-cycle` switches back on what it switched off
 before it reports, so a failure leaves the port as it found it.
 
+### When uhubctl hangs
+
+uhubctl can hang on its way out: during a desk sitting a `uhubctl -a on` sat 47
+minutes deadlocked inside `libusb_exit` (libusb's macOS hotplug thread), after
+the port had switched, and `board power-cycle` waited on it, silent. Now every
+uhubctl run (the listing and each switch) gets **20 s**
+(`$BOARD_UHUBCTL_TIMEOUT_MS` overrides it). Past that the child is killed,
+SIGTERM then SIGKILL, and `board` waits for it to be gone: it never leaves one
+running. (Not Bun's own `timeout` option: Bun 1.1.18 ignores it.)
+
+A killed uhubctl's exit says nothing about whether it switched, so `board`
+does not trust it and reads the port back from a fresh listing, itself timed,
+as it does after every switch:
+
+| What the hub shows after the hang | What `board` says |
+|---|---|
+| the port switched as asked | success, plus one warning line: `⚠️ <board>: uhubctl hung for 20 s switching hub <hub> port <n> on and was killed; the hub shows the port on, so the switch took effect` |
+| the port did not switch | the usual failure (non-zero, names the board, hub and port), led by `uhubctl hung for 20 s switching …` |
+| nothing: the listing hangs too | failure: `the hub's ports could not be read back: uhubctl hung for 20 s and was killed` |
+
 What uhubctl cannot show: a hub that marks itself `ppps`, reports the port
 off and empty, and keeps VBUS up anyway. That reads as a good cycle. The only
 witness left is the board itself (did it reboot?), which `board` does not ask.
@@ -156,7 +176,10 @@ just check          # bun test + tsc
 ```
 
 Tests run against `test/fixtures/desk/` (real desk output, MACs replaced by
-made-up ones) through `BOARD_FAKE_DESK=<dir>`. **No real desk data in this
+made-up ones) through `BOARD_FAKE_DESK=<dir>`. A test makes uhubctl hang by
+writing `hangs-power.txt` there (see `fixtureDesk`), and shortens the wait
+with `$BOARD_UHUBCTL_TIMEOUT_MS`, as `$BOARD_SETTLE_MS` and `$BOARD_LEAVE_MS`
+shorten the others. **No real desk data in this
 repo**: it is public, and the desk's facts belong to the desk.
 
 ## License
