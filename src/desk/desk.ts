@@ -7,6 +7,7 @@
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { DeskError } from "./desk_error.ts";
 import { parseBoardInfo, type BoardInfo } from "./espflash.ts";
 import { parseUhubctl, type Hub } from "./hubs.ts";
 import { parseSystemProfiler, type UsbDevice } from "./presence.ts";
@@ -20,7 +21,7 @@ export interface Desk {
   setPower(hub: string, port: number, on: boolean): void;
 }
 
-export class DeskError extends Error {}
+export { DeskError };
 
 export function deskFromEnv(env: Record<string, string | undefined> = process.env): Desk {
   const fake = env.BOARD_FAKE_DESK;
