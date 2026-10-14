@@ -65,11 +65,11 @@ export function deskHandler(home: string, desk: Desk, deps: Deps): (request: Req
         });
       }
       if (request.method === "GET" && path === "/api/state") {
-        const state = buildState(home, desk, deps);
+        const state = await buildState(home, desk, deps);
         return json({ ...stateJson(state), now: deps.now().toISOString(), you: PAGE_HOLDER });
       }
       const picture = /^\/picture\/([0-9A-Fa-f:]+)$/.exec(path);
-      if (request.method === "GET" && picture) return pictureResponse(home, desk, deps, picture[1]!);
+      if (request.method === "GET" && picture) return await pictureResponse(home, desk, deps, picture[1]!);
       if (request.method === "POST" && path === "/api/boards") return await upsert(home, deps, request);
       const action = /^\/api\/boards\/([0-9A-Fa-f:]+)\/(take|drop|power-cycle)$/.exec(path);
       if (request.method === "POST" && action) {
@@ -98,9 +98,9 @@ function appScript(): Promise<string> {
   return appJs;
 }
 
-function pictureResponse(home: string, desk: Desk, deps: Deps, macText: string): Response {
+async function pictureResponse(home: string, desk: Desk, deps: Deps, macText: string): Promise<Response> {
   const mac = normalizeMac(macText);
-  const view = mac ? buildState(home, desk, deps).views.find((candidate) => candidate.mac === mac) : undefined;
+  const view = mac ? (await buildState(home, desk, deps)).views.find((candidate) => candidate.mac === mac) : undefined;
   const file = view?.image;
   if (!file || !existsSync(file)) return json({ error: "no picture" }, 404);
   const type = PICTURE_TYPES[extname(file).toLowerCase()];
@@ -134,7 +134,7 @@ async function upsert(home: string, deps: Deps, request: Request): Promise<Respo
 }
 
 async function boardAction(home: string, desk: Desk, deps: Deps, mac: string, action: string): Promise<Response> {
-  const state = buildState(home, desk, deps);
+  const state = await buildState(home, desk, deps);
   const view = resolveRef(state, mac);
   if (!view?.mac) return json({ error: `no board ${mac}` }, 404);
   const name = viewName(view);

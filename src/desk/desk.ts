@@ -11,14 +11,15 @@ import { DeskError } from "./desk_error.ts";
 import { parseBoardInfo, type BoardInfo } from "./espflash.ts";
 import { parseUhubctl, type Hub } from "./hubs.ts";
 import { parseSystemProfiler, type UsbDevice } from "./presence.ts";
+import { timedRun, uhubctlTimeoutMs } from "./timed_run.ts";
 
 export interface Desk {
   usbDevices(): UsbDevice[];
-  /** Undefined when this machine has no uhubctl. */
-  hubs(): Hub[] | undefined;
+  /** Undefined when this machine has no uhubctl. Every uhubctl run is timed (see `timed_run.ts`). */
+  hubs(): Promise<Hub[] | undefined>;
   /** Resets the board. */
   boardInfo(port: string): BoardInfo;
-  setPower(hub: string, port: number, on: boolean): void;
+  setPower(hub: string, port: number, on: boolean): Promise<void>;
 }
 
 export { DeskError };
@@ -38,10 +39,10 @@ export function macDesk(): Desk {
         .map((name) => `/dev/${name}`);
       return parseSystemProfiler(JSON.parse(json), nodes);
     },
-    hubs() {
+    async hubs() {
       if (!Bun.which("uhubctl")) return undefined;
       try {
-        return parseUhubctl(run(["uhubctl"], 15_000));
+        return parseUhubctl(await timedRun(["uhubctl"], { timeoutMs: uhubctlTimeoutMs() }));
       } catch (err) {
         // uhubctl installed but no switchable hub attached: no hubs, not a failure.
         if (isNoHubsError(err)) return [];
@@ -52,8 +53,8 @@ export function macDesk(): Desk {
       if (!Bun.which("espflash")) throw new DeskError("espflash is not installed");
       return parseBoardInfo(run(["espflash", "board-info", "--port", port], 30_000, true));
     },
-    setPower(hub, port, on) {
-      run(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], 15_000);
+    async setPower(hub, port, on) {
+      await timedRun(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], { timeoutMs: uhubctlTimeoutMs() });
     },
   };
 }
@@ -89,7 +90,7 @@ export function fixtureDesk(dir: string): Desk {
         device.serial ? !offMacs.has(device.serial) : !offKinds.has(`${device.vid}:${device.pid}`),
       );
     },
-    hubs() {
+    async hubs() {
       if (!existsSync(join(dir, "uhubctl.txt"))) return undefined;
       // A switched-off port reads as uhubctl prints one: off, nothing attached.
       const switchedOff = off();
@@ -107,7 +108,7 @@ export function fixtureDesk(dir: string): Desk {
       if (!name) throw new DeskError(`espflash could not connect to ${port}`);
       return parseBoardInfo(read(name));
     },
-    setPower(hub, port, on) {
+    async setPower(hub, port, on) {
       const ignores = existsSync(join(dir, "ignores-power.txt")) && read("ignores-power.txt").split("\n").includes(hub);
       appendFileSync(join(dir, "power.log"), `${hub} ${port} ${on ? "on" : "off"}${ignores ? " ignored" : ""}\n`);
     },

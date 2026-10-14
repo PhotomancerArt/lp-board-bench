@@ -48,7 +48,7 @@ export async function power(
   if (!location) {
     throw new PowerError(`${name} is not on a switchable hub (uhubctl has never seen it on one)`);
   }
-  const live = desk.hubs();
+  const live = await desk.hubs();
   // A remembered location is no use when uhubctl sees no hub at all.
   if (!live || live.length === 0) {
     throw new PowerError(`${name} is not on a switchable hub (no switchable hub is attached to this machine)`);
@@ -60,19 +60,19 @@ export async function power(
   const failed = (why: string) => new PowerError(`${name}: power-${action} failed on hub ${switched.join(" and ")}: ${why}`);
   const leave = options.leaveSeconds ?? leaveSeconds();
 
-  const switchAll = (on: boolean) => {
+  const switchAll = async (on: boolean) => {
     for (const hub of hubs) {
       try {
-        desk.setPower(hub, location.port, on);
+        await desk.setPower(hub, location.port, on);
       } catch (err) {
         throw new Error(`uhubctl could not switch hub ${hub} port ${location.port} ${on ? "on" : "off"} (${message(err)})`);
       }
     }
   };
   /** Back on, after a failed off; says how that went, for the error. */
-  const restore = (): string => {
+  const restore = async (): Promise<string> => {
     try {
-      switchAll(true);
+      await switchAll(true);
       return "power was switched back on";
     } catch (err) {
       return `and switching power back on failed too: ${message(err)}`;
@@ -81,20 +81,20 @@ export async function power(
 
   if (action === "off" || action === "cycle") {
     try {
-      switchAll(false);
+      await switchAll(false);
     } catch (err) {
-      throw failed(`${message(err)}; ${restore()}`);
+      throw failed(`${message(err)}; ${await restore()}`);
     }
     // The hub is the witness, not the host: macOS keeps the device node (and
     // system_profiler keeps listing it) for as long as the port stays off,
     // and only notices on power-up. Measured on the desk, 2026-10-06.
     const why = await waitForOff(desk, hubs, location, leave);
-    if (why) throw failed(`${why}; ${restore()}`);
+    if (why) throw failed(`${why}; ${await restore()}`);
   }
   if (action === "off") return { switched };
   if (action === "cycle") await Bun.sleep((options.offSeconds ?? 2) * 1000);
   try {
-    switchAll(true);
+    await switchAll(true);
   } catch (err) {
     throw failed(message(err));
   }
@@ -168,7 +168,7 @@ function checkBoardOnPort(live: Hub[], location: HubLocation, view: BoardView, n
 async function waitForOff(desk: Desk, hubs: string[], location: HubLocation, seconds: number): Promise<string | undefined> {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    const live = desk.hubs() ?? [];
+    const live = (await desk.hubs()) ?? [];
     const powered = hubs.filter((hub) => portOf(live, { hub, port: location.port })?.powered !== false);
     const stillThere = portOf(live, location)?.connected === true;
     if (powered.length === 0 && !stillThere) return undefined;
@@ -192,7 +192,7 @@ async function waitForOff(desk: Desk, hubs: string[], location: HubLocation, sec
 async function waitForOn(desk: Desk, hubs: string[], location: HubLocation, seconds: number): Promise<string | undefined> {
   const deadline = Date.now() + seconds * 1000;
   for (;;) {
-    const live = desk.hubs() ?? [];
+    const live = (await desk.hubs()) ?? [];
     const off = hubs.filter((hub) => portOf(live, { hub, port: location.port })?.powered !== true);
     if (off.length === 0) return undefined;
     if (Date.now() >= deadline) {
@@ -232,7 +232,7 @@ async function waitForReturn(
   const deadline = Date.now() + seconds * 1000;
   let seenOnHubAt: number | undefined;
   while (Date.now() < deadline) {
-    const onHub = holdsBoard(portOf(desk.hubs() ?? [], location), view);
+    const onHub = holdsBoard(portOf((await desk.hubs()) ?? [], location), view);
     if (onHub) seenOnHubAt ??= Date.now();
     const device = findDevice(desk, view);
     if (onHub && device?.port && Date.now() - seenOnHubAt! >= settle) return device.port;
