@@ -92,7 +92,7 @@ function card(board: ViewJson): HTMLElement {
   const node = el("article", "card");
   node.classList.toggle("is-used", used);
   node.classList.toggle("is-art", board.role === "art");
-  node.classList.toggle("is-absent", !board.present);
+  node.classList.toggle("is-absent", !board.present || board.switchedOff);
 
   // Picture: LightPlayer's drawing or the piece; else the mark, big.
   const picture = el("div", "picture");
@@ -134,8 +134,8 @@ function card(board: ViewJson): HTMLElement {
   };
   fact("chip", [board.chip, board.flash].filter(Boolean).join(" · ") || (board.usbDevice?.vidPid ?? null));
   fact("hardware", board.board);
-  fact("port", board.port);
-  fact("hub", board.hub ? `${board.hub.hub} port ${board.hub.port}${board.hub.twin ? ` (+ ${board.hub.twin})` : ""}${board.hub.remembered ? " · last seen" : ""}` : null);
+  fact("port", board.switchedOff ? (board.port ? `switched off · stale ${board.port}` : "switched off") : board.port);
+  fact("hub", board.hub ? `${board.hub.hub} port ${board.hub.port}${board.hub.twin ? ` (+ ${board.hub.twin})` : ""}${board.switchedOff ? " · off" : board.hub.remembered ? " · last seen" : ""}` : null);
   fact("MAC", board.mac);
   fact("tags", board.tags.length > 0 ? board.tags.join(", ") : null);
   body.append(facts);
@@ -156,10 +156,10 @@ function statusBlock(board: ViewJson): HTMLElement {
     if (lease.purpose) block.append(el("div", "why", lease.purpose));
     return block;
   }
-  if (!board.present) {
+  if (!board.present || board.switchedOff) {
     const block = el("div", "status absent");
     const line1 = el("div", "line1");
-    line1.append(el("span", "dot"), el("span", "", "Not plugged in"));
+    line1.append(el("span", "dot"), el("span", "", board.switchedOff ? "Switched off at the hub" : "Not plugged in"));
     block.append(line1);
     return block;
   }

@@ -126,6 +126,14 @@ and its `/dev` node, until power comes back. So `board` trusts the hub, not the
 host: off is confirmed by the hub reporting the port empty, and back by the hub
 seeing the board again plus a short settle for the host to re-enumerate.
 
+That stale node is still there for every other tool too: `ls /dev/cu.*`,
+system_profiler and a browser's Web Serial port list keep a switched-off
+board until it is switched back on, and nothing answers on it. So powering a
+board off does not take it out of what the host offers. `board list` (and
+`--json`'s `switchedOff`, and the page) show a board whose hub port is off on
+every twin as switched off, with the stale node beside it, and `power-off`
+says the host keeps listing it.
+
 ### When it cannot, it fails
 
 `power-cycle`, `power-off` and `power-on` exit non-zero, with one line naming

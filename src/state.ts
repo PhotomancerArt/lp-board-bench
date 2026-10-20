@@ -29,6 +29,12 @@ export interface BoardView {
   hub?: HubLocation;
   /** True when `hub` is where the board was last seen, not where it is now. */
   hubRemembered?: boolean;
+  /**
+   * The hub has the board's port off, on every twin: the board has no power.
+   * macOS does not notice until power returns, so `device` is then the stale
+   * node it still lists, and nothing answers on it.
+   */
+  switchedOff?: boolean;
   /** A picture file to show, when one exists. */
   image?: string;
 }
@@ -76,6 +82,7 @@ export async function buildState(home: string, desk: Desk, deps: Deps): Promise<
       view.hub = memory[view.mac];
       view.hubRemembered = true;
     }
+    if (hubs && view.hub && isSwitchedOff(hubs, view.hub)) view.switchedOff = true;
     const image = pictureFor(home, view);
     if (image) view.image = image;
   }
@@ -138,6 +145,15 @@ function matchDevice(board: Board, boards: Board[], devices: UsbDevice[]): UsbDe
 function keepTwin(found: HubLocation, remembered: HubLocation | undefined): HubLocation {
   const sameSeat = remembered && remembered.hub === found.hub && remembered.port === found.port;
   return !found.twin && sameSeat && remembered.twin ? { ...found, twin: remembered.twin } : found;
+}
+
+/** Every hub of the location (the twin too) lists the port, and reads it off. */
+function isSwitchedOff(hubs: Hub[], location: HubLocation): boolean {
+  const paths = location.twin ? [location.hub, location.twin] : [location.hub];
+  return paths.every((path) => {
+    const port = hubs.find((hub) => hub.path === path)?.ports.find((candidate) => candidate.number === location.port);
+    return port !== undefined && !port.powered;
+  });
 }
 
 function locateView(hubs: Hub[], view: BoardView): HubLocation | undefined {

@@ -31,6 +31,8 @@ export function viewJson(view: BoardView) {
     port: view.device?.port ?? null,
     usbDevice: view.device ? { name: view.device.name, vidPid: vidPid(view.device), serial: view.device.serial ?? null } : null,
     hub: view.hub ? { ...view.hub, remembered: view.hubRemembered === true } : null,
+    /** The hub has the port off: no power. `present` and `port` are then macOS's stale node. */
+    switchedOff: view.switchedOff === true,
     lease: view.lease ?? null,
     line: view.line,
     picture: view.image ?? null,
