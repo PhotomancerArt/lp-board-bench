@@ -11,10 +11,11 @@ import { HungError } from "./desk/timed_run.ts";
 import { buildState, resolveRef } from "./state.ts";
 
 describe("power", () => {
-  test("off waits for the board to leave the bus; on brings it back", async () => {
+  test("off is read from the hub while the host keeps listing the board, as macOS does; on brings it back", async () => {
     const { desk, view, log } = await setup("FC6");
     await power(desk, view, "off", { settleMs: 0 });
-    expect(desk.usbDevices().some((device) => device.serial === "02:00:00:00:00:01")).toBe(false);
+    expect(await portState(desk, "1-1.2", 4)).toEqual({ powered: false, connected: false });
+    expect(desk.usbDevices().some((device) => device.serial === "02:00:00:00:00:01")).toBe(true);
     const back = await power(desk, view, "on", { settleMs: 0 });
     expect(back.port).toBe("/dev/cu.usbmodem112401");
     expect(log()).toBe("1-1.2 4 off\n1-2.2 4 off\n1-1.2 4 on\n1-2.2 4 on\n");

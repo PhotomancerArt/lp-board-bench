@@ -174,6 +174,26 @@ describe("board (CLI over the fixture desk)", () => {
     );
   });
 
+  test("a switched-off board lists as off, though macOS keeps its stale node, and power-off says so", () => {
+    const desk = setup();
+    const off = desk.run("power-off", "fc6");
+    expect(off.code).toBe(0);
+    expect(off.stderr).toContain(
+      "FC6 fixture-c6 has no power, but macOS keeps listing it (/dev/cu.usbmodem112401, system_profiler, Web Serial) " +
+        "until power returns; board list shows it switched off",
+    );
+    expect(desk.run("list").stdout).toMatch(
+      /FC6\s+fixture-c6\s.*\(switched off; stale \/dev\/cu\.usbmodem112401\)\s+1-1\.2 p4 \(\+twin\), off\s+free/,
+    );
+    expect(desk.run("show", "fc6").stdout).toContain("port        (switched off; stale /dev/cu.usbmodem112401)");
+    const fc6 = () =>
+      JSON.parse(desk.run("list", "--json").stdout).boards.find((board: { slug: string }) => board.slug === "fixture-c6");
+    expect(fc6()).toMatchObject({ switchedOff: true, present: true, port: "/dev/cu.usbmodem112401" });
+    expect(desk.run("power-on", "fc6").code).toBe(0);
+    expect(fc6().switchedOff).toBe(false);
+    expect(desk.run("list").stdout).toMatch(/FC6\s+fixture-c6\s.*\/dev\/cu\.usbmodem112401\s+1-1\.2 p4 \(\+twin\)\s+free/);
+  });
+
   test("power is refused on a board someone holds, and impossible off a switchable hub", () => {
     const desk = setup();
     desk.run("take", "fs3", "--as", "ota", "--for", "soak");

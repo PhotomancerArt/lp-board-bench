@@ -61,8 +61,10 @@ export function macDesk(): Desk {
 
 /**
  * A desk read from files. Power switches are appended to `power.log` in the
- * same directory, and a switched-off port drops its device from the listing,
- * so a test can watch a power cycle happen. A hub named in
+ * same directory, and a switched-off port reads as uhubctl prints one (off,
+ * nothing attached), so a test can watch a power cycle happen. The host side
+ * keeps listing the device the way macOS does: its node stays until power
+ * returns (measured on the desk, 2026-10-06). A hub named in
  * `ignores-power.txt` (one path per line) takes the request and changes
  * nothing, as a hub that only claims per-port switching does: the request
  * is logged with `ignored` after it.
@@ -89,15 +91,8 @@ export function fixtureDesk(dir: string, options: { uhubctlTimeoutMs?: number; k
   };
   return {
     usbDevices() {
-      const hubs = parseUhubctl(read("uhubctl.txt"));
-      const switchedOff = off();
-      const offPorts = hubs.flatMap((hub) => hub.ports.filter((port) => switchedOff.get(`${hub.path} ${port.number}`)));
-      const offMacs = new Set(offPorts.flatMap((port) => (port.mac ? [port.mac] : [])));
-      const offKinds = new Set(offPorts.flatMap((port) => (!port.mac && port.vidPid ? [port.vidPid] : [])));
       const nodes = read("dev.txt").split("\n").filter(Boolean);
-      return parseSystemProfiler(JSON.parse(read("system_profiler.json")), nodes).filter((device) =>
-        device.serial ? !offMacs.has(device.serial) : !offKinds.has(`${device.vid}:${device.pid}`),
-      );
+      return parseSystemProfiler(JSON.parse(read("system_profiler.json")), nodes);
     },
     async hubs() {
       if (!existsSync(join(dir, "uhubctl.txt"))) return undefined;

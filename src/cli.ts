@@ -125,7 +125,7 @@ async function list(home: string, desk: Desk, deps: Deps, args: string[]): Promi
     view.board?.role ?? "",
     view.board ? (view.board.chip ?? "") : view.device ? `${view.device.vid}:${view.device.pid}` : "",
     view.mac ?? "",
-    view.device?.port ?? "(not plugged in)",
+    portText(view),
     hubText(view),
     holderText(view, deps),
   ]);
@@ -150,7 +150,7 @@ async function show(home: string, desk: Desk, deps: Deps, args: string[]): Promi
     ["chip", [board?.chip, board?.flash].filter(Boolean).join(", ") || undefined],
     ["hardware", board?.board],
     ["mac", view.mac],
-    ["port", view.device?.port ?? "not plugged in"],
+    ["port", view.switchedOff ? portText(view) : (view.device?.port ?? "not plugged in")],
     ["hub", hubText(view) || undefined],
     ["holder", holderText(view, deps)],
     ["picture", view.image],
@@ -486,6 +486,12 @@ async function powerCommand(
   });
   for (const warning of result.warnings) console.error(warning);
   console.error(`${viewName(view)}: power ${action} on ${result.switched.join(" and ")}`);
+  if (action === "off" && view.device) {
+    console.error(
+      `${viewName(view)} has no power, but macOS keeps listing it (${view.device.port}, system_profiler, Web Serial) ` +
+        "until power returns; board list shows it switched off",
+    );
+  }
   if (action !== "off") {
     if (result.port) console.log(result.port);
     else console.error(`${viewName(view)} did not come back on the bus within 15 s`);
@@ -542,9 +548,19 @@ function findBoardIndex(boards: Board[], ref: string): number {
   return index;
 }
 
+/**
+ * A switched-off board says so first: macOS keeps listing its node until
+ * power returns, and nothing answers on it.
+ */
+function portText(view: BoardView): string {
+  if (view.switchedOff) return view.device ? `(switched off; stale ${view.device.port})` : "(switched off)";
+  return view.device?.port ?? "(not plugged in)";
+}
+
 function hubText(view: BoardView): string {
   if (!view.hub) return "";
   const text = `${view.hub.hub} p${view.hub.port}${view.hub.twin ? " (+twin)" : ""}`;
+  if (view.switchedOff) return `${text}, off`;
   return view.hubRemembered ? `${text}, last seen` : text;
 }
 
