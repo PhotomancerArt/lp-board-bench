@@ -109,6 +109,7 @@ this repo:
 | `waiting/<MAC>/<id>.json` | the line for a board |
 | `images/<MAC>.board.svg`, `<MAC>.art.svg` | pictures, written by whoever can draw them (LightPlayer's `lp-cli hardware desk-images`); an entry's `image` names a photo instead |
 | `log/serve.log` | the page service's output |
+| `hub-twins.toml` | twins named by hand, for a hub tree the twin rule cannot pair (see "How power cycling knows"). `board` reads it and never writes it |
 | `hub-ports.json` | where each board was last seen on a hub, and the hub's twin, so `power-on` finds a board that is off. A twin once seen is kept: delete the board's entry if its hub really has no twin any more |
 | `.lock/` | the mutex every read-modify-write takes |
 
@@ -118,8 +119,47 @@ half a file and two agents racing for one board cannot both win.
 ## How power cycling knows
 
 A USB 2 + USB 3 hub (the VIA VL817 here) is two hubs on one chip, and VBUS
-drops only when both have the port off: `board` finds the twin (same path under
-the other root port, same vendor) and switches both.
+drops only when both have the port off: `board` finds the twin and switches
+both, each with uhubctl's `-e` (exact), so uhubctl switches only the port named
+and never a companion it picked itself.
+
+The twin is found by where it sits in the tree, not by its path. On the desk
+(2026-10-23) a ganged USB 2-only CH hub sits between two VIA hubs on the USB 2
+side and is absent from the USB 3 side, so the USB 2 path is one level deeper:
+
+```
+USB 2:  1-1 (VIA) ─p3─ 1-1.3 (CH, ganged) ─p1─ 1-1.3.1 (VIA) ─p3─ 1-1.3.1.3 (VIA)
+USB 3:  1-2 (VIA) ─p3─────────────────────────  1-2.3   (VIA) ─p3─ 1-2.3.3   (VIA)
+```
+
+The twin of `1-1.3.1` is `1-2.3`. The old path rule found none, so `board`
+switched only the USB 2 half and the board never lost power. uhubctl's own
+pairing gets it wrong too: it takes `1-2.3.3` for `1-1.3.1`'s companion, and
+without `-e`, `uhubctl -l 1-2.3 -p 2 -a off` cut the board on `1-1.3.1.3`
+port 2. The rule now:
+
+- twins are the same vendor, one USB 2 and one USB 3 (the bcdUSB in uhubctl's
+  description), on the same bus, with the same ports (the USB 2 half of a VIA
+  hub may list one more, its billboard);
+- they hang off twin parents at the same port, where a parent is the nearest
+  hub up the path of the same vendor that uhubctl lists. A hub of another
+  vendor in between is stepped over, but one of the same vendor that uhubctl
+  does not list is not: it may be a twin's missing half;
+- each side must name the other.
+
+When more than one hub fits, or none does where one should, `board` switches
+nothing and says why. For a tree no rule fits, name the twin by hand in
+`$BOARD_HOME/hub-twins.toml` (either side names both; `none` says a hub has
+no twin):
+
+```toml
+"1-1.3.1" = "1-2.3"
+"1-1.5" = "none"
+```
+
+`board show` names the twin (`1-1.3.1 p2 (+twin 1-2.3)`), or says why it
+cannot be told. `board` never switches a port that carries a hub, on either
+twin, so a wrong pairing cannot cut every board behind it.
 
 macOS does not notice a port being switched off: it keeps listing the device,
 and its `/dev` node, until power comes back. So `board` trusts the hub, not the
@@ -148,6 +188,9 @@ the board's power. Nothing is reported as done that the hub did not confirm:
 | the port the board was last seen on has power and someone else (or nothing) on it | the board is not there; nothing is switched, so nobody else's port is cut |
 | after off, a switched port (either twin) still reads `power` | power did not drop: the hub does not really switch this port |
 | after off, the ports read off but the board is still on the hub | power did not drop: a twin not switched, or the board is powered another way |
+| the hub's twin cannot be told: two hubs fit, or none does where its other half should be | the twin cannot be told, and how to name it in `hub-twins.toml`; nothing is switched |
+| a port to be switched (on either twin) carries a hub | that port carries a hub; nothing is switched |
+| at the end of a cycle's off time, a switched port reads power again | power did not stay down |
 | after on, a switched port still reads `off` | the hub did not switch the port back on |
 
 A failed `power-off` or `power-cycle` switches back on what it switched off
@@ -174,8 +217,12 @@ as it does after every switch:
 | nothing: the listing hangs too | failure: `the hub's ports could not be read back: uhubctl hung for 20 s and was killed` |
 
 What uhubctl cannot show: a hub that marks itself `ppps`, reports the port
-off and empty, and keeps VBUS up anyway. That reads as a good cycle. The only
+off and empty, and keeps VBUS up anyway. Nor a twin that was never found: with
+only the USB 2 half switched off, that hub reports the port off and empty
+while VBUS stays up through the USB 3 half. Both read as a good cycle. The only
 witness left is the board itself (did it reboot?), which `board` does not ask.
+After a change to how twins are found, check on silicon: the board's reset
+reason should be power-on, with a few seconds' uptime.
 
 ## Development
 
