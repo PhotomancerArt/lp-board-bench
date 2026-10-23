@@ -15,4 +15,5 @@ export const leasesDir = (home: string) => join(home, "leases");
 export const leasePath = (home: string, mac: string) => join(leasesDir(home), `${mac}.json`);
 export const lineDir = (home: string, mac: string) => join(home, "waiting", mac);
 export const imagesDir = (home: string) => join(home, "images");
+export const hubTwinsPath = (home: string) => join(home, "hub-twins.toml");
 export const lockDir = (home: string) => join(home, ".lock");
