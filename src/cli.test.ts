@@ -194,6 +194,43 @@ describe("board (CLI over the fixture desk)", () => {
     expect(desk.run("list").stdout).toMatch(/FC6\s+fixture-c6\s.*\/dev\/cu\.usbmodem112401\s+1-1\.2 p4 \(\+twin\)\s+free/);
   });
 
+  test("show names the twin; power-cycle cuts both halves where a USB 2-only hub sits between them", () => {
+    const desk = setup();
+    cpSync(join(desk.fixture, "uhubctl-ch-hub-between-twins.txt"), join(desk.fixture, "uhubctl.txt"));
+    expect(desk.run("show", "fs3").stdout).toContain("hub         1-1.3.1 p2 (+twin 1-2.3)\n");
+    expect(desk.run("list").stdout).toMatch(/FS3\s+fixture-s3\s.*1-1\.3\.1 p2 \(\+twin\)\s+free/);
+    expect(desk.run("power-cycle", "fs3", "--off-secs", "0").code).toBe(0);
+    expect(readFileSync(join(desk.fixture, "power.log"), "utf8")).toBe("1-1.3.1 2 off\n1-2.3 2 off\n1-1.3.1 2 on\n1-2.3 2 on\n");
+  });
+
+  test("a twin that cannot be told is shown, power is refused, and hub-twins.toml settles it", () => {
+    const desk = setup();
+    const listing = readFileSync(join(desk.fixture, "uhubctl-ch-hub-between-twins.txt"), "utf8");
+    // A second VIA hub on the ganged CH hub: either could be 1-2.3's twin.
+    writeFileSync(join(desk.fixture, "uhubctl.txt"), listing.replace("hub 1-1.3.1.3 ", "hub 1-1.3.2 "));
+    expect(desk.run("show", "fs3").stdout).toContain("twin        ⚠️ cannot tell which hub is its USB 3 twin: 1-2.3 fits");
+    const refused = desk.run("power-cycle", "fs3", "--off-secs", "0");
+    expect(refused.code).not.toBe(0);
+    expect(refused.stderr).toContain("FS3 fixture-s3: cannot switch power on hub 1-1.3.1 port 2: cannot tell which hub is its USB 3 twin");
+    expect(existsSync(join(desk.fixture, "power.log"))).toBe(false);
+
+    writeFileSync(join(desk.home, "hub-twins.toml"), '"1-1.3.1" = "1-2.3"\n');
+    expect(desk.run("show", "fs3").stdout).toContain("hub         1-1.3.1 p2 (+twin 1-2.3)\n");
+    expect(desk.run("power-cycle", "fs3", "--off-secs", "0").code).toBe(0);
+    expect(readFileSync(join(desk.fixture, "power.log"), "utf8")).toBe("1-1.3.1 2 off\n1-2.3 2 off\n1-1.3.1 2 on\n1-2.3 2 on\n");
+  });
+
+  test("a hub-twins.toml that says something else is an error naming the line", () => {
+    const desk = setup();
+    writeFileSync(join(desk.home, "hub-twins.toml"), '"1-1.3.1" = "usb3"\n"1-1.4" = 2\n');
+    const result = desk.run("list");
+    expect(result.code).not.toBe(0);
+    expect(result.stderr).toContain('"1-1.3.1" = "usb3": the twin must be a hub location or "none"');
+    expect(result.stderr).toContain('"1-1.4" = 2: the twin must be a hub location or "none"');
+    writeFileSync(join(desk.home, "hub-twins.toml"), '1-1.4 = "1-2.4"\n');
+    expect(desk.run("list").stderr).toContain('not valid TOML (quote each hub location: "1-1.3.1" = "1-2.3")');
+  });
+
   test("power is refused on a board someone holds, and impossible off a switchable hub", () => {
     const desk = setup();
     desk.run("take", "fs3", "--as", "ota", "--for", "soak");

@@ -151,7 +151,8 @@ async function show(home: string, desk: Desk, deps: Deps, args: string[]): Promi
     ["hardware", board?.board],
     ["mac", view.mac],
     ["port", view.switchedOff ? portText(view) : (view.device?.port ?? "not plugged in")],
-    ["hub", hubText(view) || undefined],
+    ["hub", hubText(view, true) || undefined],
+    ["twin", view.twinProblem ? `⚠️ ${view.twinProblem}` : undefined],
     ["holder", holderText(view, deps)],
     ["picture", view.image],
     ["lightplayer", [board?.lp_board, board?.lp_project].filter(Boolean).join(", ") || undefined],
@@ -482,6 +483,7 @@ async function powerCommand(
   if (verdict.code !== EXIT.ok) throw new Refusal(verdict.message, verdict.code);
   const view = verdict.view!;
   const result = await power(desk, view, action, {
+    twins: state.twins,
     ...(values["off-secs"] ? { offSeconds: number(values["off-secs"], "--off-secs") } : {}),
   });
   for (const warning of result.warnings) console.error(warning);
@@ -557,9 +559,11 @@ function portText(view: BoardView): string {
   return view.device?.port ?? "(not plugged in)";
 }
 
-function hubText(view: BoardView): string {
+/** `1-1.2 p4 (+twin)`; `long` names the twin (`(+twin 1-2.2)`). */
+function hubText(view: BoardView, long = false): string {
   if (!view.hub) return "";
-  const text = `${view.hub.hub} p${view.hub.port}${view.hub.twin ? " (+twin)" : ""}`;
+  const twin = view.hub.twin ? (long ? ` (+twin ${view.hub.twin})` : " (+twin)") : "";
+  const text = `${view.hub.hub} p${view.hub.port}${twin}`;
   if (view.switchedOff) return `${text}, off`;
   return view.hubRemembered ? `${text}, last seen` : text;
 }
