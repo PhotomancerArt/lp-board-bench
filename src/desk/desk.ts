@@ -54,7 +54,7 @@ export function macDesk(): Desk {
       return parseBoardInfo(run(["espflash", "board-info", "--port", port], 30_000, true));
     },
     async setPower(hub, port, on) {
-      await timedRun(["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"], { timeoutMs: uhubctlTimeoutMs() });
+      await timedRun(uhubctlSwitch(hub, port, on), { timeoutMs: uhubctlTimeoutMs() });
     },
   };
 }
@@ -129,10 +129,22 @@ export function fixtureDesk(dir: string, options: { uhubctlTimeoutMs?: number; k
       await timedRun(["sh", "-c", `echo $$ >> "$1"; ${trap}exec sleep 3600`, "sh", join(dir, "hung.pids")], {
         timeoutMs,
         ...(options.killGraceMs !== undefined ? { graceMs: options.killGraceMs } : {}),
-        label: `uhubctl -l ${hub} -p ${port} -a ${action} -e`,
+        label: uhubctlSwitch(hub, port, on).join(" "),
       });
     },
   };
+}
+
+/**
+ * The uhubctl run that switches one port of one hub, and only that: `-e`
+ * (exact) stops uhubctl switching the port on what it takes for the hub's
+ * USB 3 companion too. Its pairing goes by path, and on a tree where a
+ * USB 2-only hub sits between twins it picks the wrong hub: without `-e`,
+ * switching 1-2.3 port 2 also cut 1-1.3.1.3 port 2, another board (desk,
+ * 2026-10-23). `board` switches both twins itself, as `findTwin` pairs them.
+ */
+export function uhubctlSwitch(hub: string, port: number, on: boolean): string[] {
+  return ["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"];
 }
 
 /**

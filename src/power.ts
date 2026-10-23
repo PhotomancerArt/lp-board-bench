@@ -15,7 +15,7 @@
  * that says it hung.
  */
 import type { Desk } from "./desk/desk.ts";
-import { parentOf, powerSwitching, twinOf, type Hub, type HubLocation, type HubPort } from "./desk/hubs.ts";
+import { findTwin, parentOf, powerSwitching, type Hub, type HubLocation, type HubPort, type TwinOverrides } from "./desk/hubs.ts";
 import { vidPid } from "./desk/presence.ts";
 import { HungError } from "./desk/timed_run.ts";
 import { normalizeMac } from "./mac.ts";
@@ -49,7 +49,14 @@ export async function power(
   desk: Desk,
   view: BoardView,
   action: PowerAction,
-  options: { offSeconds?: number; returnSeconds?: number; leaveSeconds?: number; settleMs?: number } = {},
+  options: {
+    offSeconds?: number;
+    returnSeconds?: number;
+    leaveSeconds?: number;
+    settleMs?: number;
+    /** `hub-twins.toml`, as `buildState` read it. */
+    twins?: TwinOverrides;
+  } = {},
 ): Promise<PowerResult> {
   const name = viewName(view);
   const location = view.hub;
@@ -66,7 +73,7 @@ export async function power(
   if (!live || live.length === 0) {
     throw new PowerError(`${name} is not on a switchable hub (no switchable hub is attached to this machine)`);
   }
-  const hubs = hubsToSwitch(live, location, name);
+  const hubs = hubsToSwitch(live, location, name, options.twins ?? {});
   checkBoardOnPort(live, location, view, name);
 
   const switched = hubs.map((hub) => `${hub} port ${location.port}`);
@@ -126,7 +133,11 @@ export async function power(
     tookEffect(hung, "off");
   }
   if (action === "off") return { switched, warnings };
-  if (action === "cycle") await Bun.sleep((options.offSeconds ?? 2) * 1000);
+  if (action === "cycle") {
+    await Bun.sleep((options.offSeconds ?? 2) * 1000);
+    const why = await stayedOff(desk, hubs, location);
+    if (why) throw failed(`${why}; ${await restore()}`);
+  }
   let hung: string[];
   try {
     hung = await switchAll(true);
@@ -142,11 +153,17 @@ export async function power(
 
 /**
  * The hub and its twin, each checked against what uhubctl lists now: present,
- * switching per port, and with the board's port. The twin comes from the live
- * listing when it shows one, so a remembered location never skips it.
+ * switching per port, with the board's port, and no hub on that port. The
+ * twin comes from the live listing when it shows one, so a remembered
+ * location never skips it; a hub whose twin the listing cannot name
+ * (`findTwin`'s problem) and that has none remembered is not switched at all.
  */
-function hubsToSwitch(live: Hub[], location: HubLocation, name: string): string[] {
-  const twin = twinOf(live, location.hub) ?? location.twin;
+function hubsToSwitch(live: Hub[], location: HubLocation, name: string, twins: TwinOverrides): string[] {
+  const found = findTwin(live, location.hub, twins);
+  const twin = found.twin ?? (found.none ? undefined : location.twin);
+  if (!twin && found.problem) {
+    throw new PowerError(`${name}: cannot switch power on hub ${location.hub} port ${location.port}: ${found.problem}`);
+  }
   const hubs = twin ? [location.hub, twin] : [location.hub];
   for (const path of hubs) {
     const isTwin = path !== location.hub;
@@ -160,9 +177,20 @@ function hubsToSwitch(live: Hub[], location: HubLocation, name: string): string[
     if (hub.switching && hub.switching !== "ppps") {
       throw cannot(`the hub (${hub.vidPid} ${hub.description}) does not support per-port power switching: uhubctl marks it ${hub.switching}`);
     }
-    if (!hub.ports.some((port) => port.number === location.port)) throw cannot(`the hub has no port ${location.port}`);
+    const port = hub.ports.find((candidate) => candidate.number === location.port);
+    if (!port) throw cannot(`the hub has no port ${location.port}`);
+    const downstream = hubOn(live, path, port);
+    if (downstream) throw cannot(`that port carries a hub (${downstream}), and cutting it would cut every board behind it`);
   }
   return hubs;
+}
+
+/** What hub sits on the port, when one does: by its mode in the description, or a hub uhubctl lists there. */
+function hubOn(live: Hub[], path: string, port: HubPort): string | undefined {
+  const listed = live.find((hub) => hub.path === `${path}.${port.number}`);
+  if (listed) return `${listed.path}, ${listed.vidPid} ${listed.description}`;
+  if (port.connected && port.description && powerSwitching(port.description)) return `${port.vidPid ?? "?"} ${port.description}`;
+  return undefined;
 }
 
 /**
@@ -223,6 +251,21 @@ async function waitForOff(desk: Desk, hubs: string[], location: HubLocation, sec
     }
     await Bun.sleep(250);
   }
+}
+
+/**
+ * Undefined when every switched port still reads off at the end of the off
+ * time: something (a uhubctl run without `-e` switching its own idea of the
+ * twin, or the hub itself) may have switched one back on, and then the
+ * board never lost power for the whole off time.
+ */
+async function stayedOff(desk: Desk, hubs: string[], location: HubLocation): Promise<string | undefined> {
+  const live = await listOrWhy(desk);
+  if (typeof live === "string") return live;
+  const back = hubs.filter((hub) => portOf(live, { hub, port: location.port })?.powered !== false);
+  if (back.length === 0) return undefined;
+  const ports = back.map((hub) => `hub ${hub} port ${location.port}`).join(" and ");
+  return `power did not stay down: ${ports} read power again before board switched ${back.length === 1 ? "it" : "them"} back on`;
 }
 
 /** Undefined once every switched port reads power again; otherwise, after `seconds`, why not. */

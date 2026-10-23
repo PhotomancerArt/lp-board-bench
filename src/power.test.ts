@@ -117,6 +117,71 @@ describe("power", () => {
   });
 });
 
+describe("power on twins a USB 2-only hub sits between", () => {
+  // The desk on 2026-10-23: 1-1.3.1 sits behind a ganged CH hub, and its USB 3 twin is 1-2.3.
+  test("cuts both halves: the VIA hub behind the CH hub and its USB 3 twin one level up", async () => {
+    const { desk, view, log } = await setup("FS3", { listing: "uhubctl-ch-hub-between-twins.txt" });
+    expect(view.hub).toEqual({ hub: "1-1.3.1", port: 2, twin: "1-2.3" });
+    const result = await power(desk, view, "cycle", { offSeconds: 0, settleMs: 0 });
+    expect(result.switched).toEqual(["1-1.3.1 port 2", "1-2.3 port 2"]);
+    expect(log()).toBe("1-1.3.1 2 off\n1-2.3 2 off\n1-1.3.1 2 on\n1-2.3 2 on\n");
+  });
+
+  test("a tree where the twin cannot be told switches nothing, and says how to name it", async () => {
+    const { desk, view, log } = await setup("FS3", {
+      listing: "uhubctl-ch-hub-between-twins.txt",
+      uhubctl: (text) => text.replace("Current status for hub 1-1.3.1.3 ", "Current status for hub 1-1.3.2 "),
+    });
+    await expect(power(desk, view, "cycle", { offSeconds: 0, settleMs: 0 })).rejects.toThrow(
+      "FS3 fixture-s3: cannot switch power on hub 1-1.3.1 port 2: cannot tell which hub is its USB 3 twin: 1-2.3 fits, " +
+        "but it fits another hub as well; board does not guess: name it in the desk's hub-twins.toml (\"1-1.3.1\" = \"1-2.3\")",
+    );
+    expect(log()).toBe("");
+    const twins = { "1-1.3.1": "1-2.3" };
+    await power(desk, view, "cycle", { offSeconds: 0, settleMs: 0, twins });
+    expect(log()).toBe("1-1.3.1 2 off\n1-2.3 2 off\n1-1.3.1 2 on\n1-2.3 2 on\n");
+  });
+
+  test("a port that carries a hub is never switched, on either twin", async () => {
+    // A wrong pairing named by hand: 1-2's port 4 carries the USB 3 hub 1-2.4.
+    // CX2 is not in the fixture's system_profiler, so it is found where it was last seen.
+    const { desk, view, log } = await setup("CX2", {
+      listing: "uhubctl-ch-hub-between-twins.txt",
+      memory: { "02:00:00:00:00:06": { hub: "1-1.3.1", port: 4 } },
+    });
+    await expect(power(desk, view, "off", { settleMs: 0, twins: { "1-1.3.1": "1-2" } })).rejects.toThrow(
+      "CX2 c6-button: cannot switch power on its twin hub 1-2 port 4: that port carries a hub " +
+        "(1-2.4, 2109:0817 VIA Labs, Inc. USB3.0 Hub, USB 3.20, 4 ports, ppps), and cutting it would cut every board behind it",
+    );
+    expect(log()).toBe("");
+  });
+
+  test("a port switched back on during the off time is a failure: the board did not stay without power", async () => {
+    const { desk, view } = await setup("FS3", { listing: "uhubctl-ch-hub-between-twins.txt" });
+    // After the off is confirmed, the hub shows the USB 3 half's port powered again.
+    let listingsSinceOff = 0;
+    let switchedOff = false;
+    const flips: Desk = {
+      ...desk,
+      setPower: async (hub, port, on) => {
+        if (!on) switchedOff = true;
+        await desk.setPower(hub, port, on);
+      },
+      hubs: async () => {
+        const live = (await desk.hubs())!;
+        if (!switchedOff || ++listingsSinceOff < 2) return live;
+        return live.map((hub) =>
+          hub.path === "1-2.3" ? { ...hub, ports: hub.ports.map((port) => (port.number === 2 ? { ...port, powered: true } : port)) } : hub,
+        );
+      },
+    };
+    await expect(power(flips, view, "cycle", { offSeconds: 0, settleMs: 0 })).rejects.toThrow(
+      "FS3 fixture-s3: power-cycle failed on hub 1-1.3.1 port 2 and 1-2.3 port 2: power did not stay down: " +
+        "hub 1-2.3 port 2 read power again before board switched it back on; power was switched back on",
+    );
+  });
+});
+
 describe("power when uhubctl hangs", () => {
   test("a switch that took effect before uhubctl hung succeeds, with a warning, and the hung child is gone", async () => {
     // The hardware sitting that found this: `uhubctl -a on` sat in libusb_exit after the port switched.
@@ -190,6 +255,8 @@ describe("power when uhubctl hangs", () => {
 });
 
 interface SetupOptions {
+  /** Another uhubctl listing from the fixtures, in place of `uhubctl.txt`. */
+  listing?: string;
   /** Rewrites the fixture's uhubctl listing. */
   uhubctl?: (text: string) => string;
   /** hub-ports.json: where boards were last seen. */
@@ -205,6 +272,7 @@ async function setup(mark: string, options: SetupOptions = {}) {
   const fixture = tempHome();
   cpSync(join(import.meta.dir, "..", "test", "fixtures", "desk"), fixture, { recursive: true });
   const listing = join(fixture, "uhubctl.txt");
+  if (options.listing) cpSync(join(fixture, options.listing), listing);
   if (options.uhubctl) {
     const before = readFileSync(listing, "utf8");
     const after = options.uhubctl(before);
@@ -226,6 +294,14 @@ async function setup(mark: string, options: SetupOptions = {}) {
       'mark = "FV3"',
       'mac = "02:00:00:00:00:04"',
       'usb = "1a86:7522"',
+      "[[board]]",
+      'slug = "fixture-s3"',
+      'mark = "FS3"',
+      'mac = "02:00:00:00:00:02"',
+      "[[board]]",
+      'slug = "c6-button"',
+      'mark = "CX2"',
+      'mac = "02:00:00:00:00:06"',
       "[[board]]",
       'slug = "art-choker"',
       'mark = "CHK"',

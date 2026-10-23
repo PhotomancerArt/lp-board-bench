@@ -9,8 +9,9 @@ import { isAbsolute, join } from "node:path";
 import { atomicWrite } from "./atomic_write.ts";
 import type { Deps } from "./deps.ts";
 import type { Desk } from "./desk/desk.ts";
-import { locate, type Hub, type HubLocation } from "./desk/hubs.ts";
+import { findTwin, locate, type Hub, type HubLocation, type TwinOverrides } from "./desk/hubs.ts";
 import { vidPid, type UsbDevice } from "./desk/presence.ts";
+import { loadTwinOverrides } from "./hub_twins.ts";
 import { liveLease, type Lease } from "./lease.ts";
 import { isMac, normalizeMac } from "./mac.ts";
 import { imagesDir } from "./paths.ts";
@@ -29,6 +30,8 @@ export interface BoardView {
   hub?: HubLocation;
   /** True when `hub` is where the board was last seen, not where it is now. */
   hubRemembered?: boolean;
+  /** The hub should have a twin and the rule cannot name it: why. Power is refused. */
+  twinProblem?: string;
   /**
    * The hub has the board's port off, on every twin: the board has no power.
    * macOS does not notice until power returns, so `device` is then the stale
@@ -43,6 +46,8 @@ export interface DeskState {
   views: BoardView[];
   /** False when this machine has no uhubctl: power actions are off. */
   hubsAvailable: boolean;
+  /** `hub-twins.toml`: twins named by hand. */
+  twins: TwinOverrides;
 }
 
 export async function buildState(home: string, desk: Desk, deps: Deps): Promise<DeskState> {
@@ -50,6 +55,7 @@ export async function buildState(home: string, desk: Desk, deps: Deps): Promise<
   const devices = desk.usbDevices();
   const hubs = await desk.hubs();
   const memory = readHubMemory(home);
+  const twins = loadTwinOverrides(home);
   const claimed = new Set<UsbDevice>();
 
   const views: BoardView[] = boards.map((board) => {
@@ -70,10 +76,12 @@ export async function buildState(home: string, desk: Desk, deps: Deps): Promise<
       if (lease) view.lease = lease;
       view.line = lineFor(home, view.mac, deps);
     }
-    const located = hubs && view.device ? locateView(hubs, view) : undefined;
-    const found = located && view.mac ? keepTwin(located, memory[view.mac]) : located;
+    const located = hubs && view.device ? locateView(hubs, view, twins) : undefined;
+    const found = located && view.mac ? keepTwin(located, memory[view.mac], twins) : located;
     if (found) {
       view.hub = found;
+      const problem = found.twin ? undefined : findTwin(hubs!, found.hub, twins).problem;
+      if (problem) view.twinProblem = problem;
       if (view.mac && JSON.stringify(memory[view.mac]) !== JSON.stringify(found)) {
         memory[view.mac] = found;
         memoryChanged = true;
@@ -88,7 +96,7 @@ export async function buildState(home: string, desk: Desk, deps: Deps): Promise<
   }
   if (memoryChanged) atomicWrite(join(home, "hub-ports.json"), `${JSON.stringify(memory, null, 2)}\n`);
 
-  return { views, hubsAvailable: hubs !== undefined };
+  return { views, hubsAvailable: hubs !== undefined, twins };
 }
 
 export class RefError extends Error {}
@@ -140,9 +148,11 @@ function matchDevice(board: Board, boards: Board[], devices: UsbDevice[]): UsbDe
  * A twin seen once stays: a hub on the same port that lists without its twin
  * today has half of itself missing (the USB 3 side did not enumerate), and
  * switching only the other half leaves VBUS up. Power then fails by name
- * instead of switching one half and reporting success.
+ * instead of switching one half and reporting success. Unless `hub-twins.toml`
+ * says the hub has none.
  */
-function keepTwin(found: HubLocation, remembered: HubLocation | undefined): HubLocation {
+function keepTwin(found: HubLocation, remembered: HubLocation | undefined, twins: TwinOverrides): HubLocation {
+  if (findTwin([], found.hub, twins).none) return found;
   const sameSeat = remembered && remembered.hub === found.hub && remembered.port === found.port;
   return !found.twin && sameSeat && remembered.twin ? { ...found, twin: remembered.twin } : found;
 }
@@ -156,10 +166,10 @@ function isSwitchedOff(hubs: Hub[], location: HubLocation): boolean {
   });
 }
 
-function locateView(hubs: Hub[], view: BoardView): HubLocation | undefined {
+function locateView(hubs: Hub[], view: BoardView, twins: TwinOverrides): HubLocation | undefined {
   const device = view.device!;
   const serialIsMac = device.serial !== undefined && isMac(device.serial);
-  return serialIsMac ? locate(hubs, { mac: view.mac! }) : locate(hubs, { vidPid: vidPid(device) });
+  return locate(hubs, serialIsMac ? { mac: view.mac! } : { vidPid: vidPid(device) }, twins);
 }
 
 function pictureFor(home: string, view: BoardView): string | undefined {

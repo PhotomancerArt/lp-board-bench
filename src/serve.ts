@@ -152,7 +152,7 @@ async function boardAction(home: string, desk: Desk, deps: Deps, mac: string, ac
   }
   const verdict = checkBoard(state, view.mac, PAGE_HOLDER, undefined, deps);
   if (verdict.code !== EXIT.ok) return json({ error: verdict.message }, 409);
-  const result = await power(desk, view, "cycle");
+  const result = await power(desk, view, "cycle", { twins: state.twins });
   const done = result.port ? `${name}: power-cycled, back on ${result.port}` : `${name}: power-cycled, not back yet`;
   return json({ ok: true, message: [...result.warnings, done].join("\n") });
 }
