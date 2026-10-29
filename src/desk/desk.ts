@@ -1,12 +1,13 @@
 /**
  * The desk's hardware, behind one interface so everything above it runs on
  * fixtures in tests. The real desk is macOS: system_profiler, /dev, uhubctl,
- * espflash. `BOARD_FAKE_DESK=<dir>` swaps in a fixture directory (see
+ * espflash. `LP_BENCH_FAKE_DESK=<dir>` swaps in a fixture directory (see
  * test/fixtures/desk/README.md) — the seam the CLI tests use.
  */
 import { appendFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { benchEnv, type Env } from "../env.ts";
 import { DeskError } from "./desk_error.ts";
 import { parseBoardInfo, type BoardInfo } from "./espflash.ts";
 import { parseUhubctl, type Hub } from "./hubs.ts";
@@ -24,8 +25,8 @@ export interface Desk {
 
 export { DeskError };
 
-export function deskFromEnv(env: Record<string, string | undefined> = process.env): Desk {
-  const fake = env.BOARD_FAKE_DESK;
+export function deskFromEnv(env: Env = process.env): Desk {
+  const fake = benchEnv("FAKE_DESK", env);
   return fake ? fixtureDesk(fake) : macDesk();
 }
 
@@ -141,7 +142,7 @@ export function fixtureDesk(dir: string, options: { uhubctlTimeoutMs?: number; k
  * USB 3 companion too. Its pairing goes by path, and on a tree where a
  * USB 2-only hub sits between twins it picks the wrong hub: without `-e`,
  * switching 1-2.3 port 2 also cut 1-1.3.1.3 port 2, another board (desk,
- * 2026-10-23). `board` switches both twins itself, as `findTwin` pairs them.
+ * 2026-10-23). `lp-bench` switches both twins itself, as `findTwin` pairs them.
  */
 export function uhubctlSwitch(hub: string, port: number, on: boolean): string[] {
   return ["uhubctl", "-l", hub, "-p", String(port), "-a", on ? "on" : "off", "-e"];

@@ -11,11 +11,13 @@ check:
 test *args:
     bun test {{args}}
 
-# Build `board` as one binary into ~/.local/bin (on the desk's PATH), and
-# restart the desk page if it runs as a service, so it serves the new binary.
+# Build `lp-bench` as one binary into ~/.local/bin (on the desk's PATH), with
+# `board` (its old name) linked to it while callers move over, and re-render
+# and restart the desk page if it runs as a service, so it serves the new binary.
 install:
-    bun build --compile src/cli.ts --outfile ~/.local/bin/board
-    @if launchctl print "gui/$(id -u)/com.photomancer.board-bench" >/dev/null 2>&1; then service/service.sh restart; fi
+    bun build --compile src/cli.ts --outfile ~/.local/bin/lp-bench
+    ln -sf lp-bench ~/.local/bin/board
+    @if launchctl print "gui/$(id -u)/com.photomancer.board-bench" >/dev/null 2>&1; then service/service.sh install; fi
 
 # The desk page as a launchd service: start at login, restart if it dies.
 service-install:

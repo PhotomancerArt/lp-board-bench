@@ -1,6 +1,6 @@
 /**
  * Switching a board's hub port: both twins, or VBUS stays up. Callers check
- * the lease first (`board power-*` does).
+ * the lease first (`lp-bench power-*` does).
  *
  * Every switch is confirmed by the hub, or the command fails: a hub that
  * cannot switch per-port power (uhubctl marks it `ganged` or `nops`), a twin
@@ -15,6 +15,7 @@
  * that says it hung.
  */
 import type { Desk } from "./desk/desk.ts";
+import { benchEnv } from "./env.ts";
 import { findTwin, parentOf, powerSwitching, type Hub, type HubLocation, type HubPort, type TwinOverrides } from "./desk/hubs.ts";
 import { vidPid } from "./desk/presence.ts";
 import { HungError } from "./desk/timed_run.ts";
@@ -25,15 +26,15 @@ export type PowerAction = "off" | "on" | "cycle";
 
 /**
  * How long the host gets to re-enumerate once the hub sees the board again.
- * `$BOARD_SETTLE_MS` overrides it (the CLI tests run with 0).
+ * `$LP_BENCH_SETTLE_MS` overrides it (the CLI tests run with 0).
  */
-const settleMs = () => Number(process.env.BOARD_SETTLE_MS ?? 2000);
+const settleMs = () => Number(benchEnv("SETTLE_MS") ?? 2000);
 
 /**
  * How long the hub gets to report a switched port, and the board to leave it.
- * `$BOARD_LEAVE_MS` overrides it (the CLI tests run short).
+ * `$LP_BENCH_LEAVE_MS` overrides it (the CLI tests run short).
  */
-const leaveSeconds = () => Number(process.env.BOARD_LEAVE_MS ?? 5000) / 1000;
+const leaveSeconds = () => Number(benchEnv("LEAVE_MS") ?? 5000) / 1000;
 
 export class PowerError extends Error {}
 
@@ -213,7 +214,7 @@ function unlistedReason(live: Hub[], path: string): string {
  * can be stale: a board moved to a hub uhubctl cannot switch is still on the
  * bus but on no listed port, and switching where it used to be would cut
  * whatever is there now and report success. A port that is already off is
- * where a board powered off by `board` sits, so that passes.
+ * where a board powered off by `lp-bench` sits, so that passes.
  */
 function checkBoardOnPort(live: Hub[], location: HubLocation, view: BoardView, name: string) {
   const port = portOf(live, location);

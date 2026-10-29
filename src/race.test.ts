@@ -11,7 +11,7 @@ describe("racing for one board", () => {
       const home = tempHome();
       const script = join(import.meta.dir, "..", "test", "race_take.ts");
       const contenders = Array.from({ length: 8 }, (_, n) =>
-        Bun.spawn([process.execPath, script, String(n)], { env: { ...process.env, BOARD_HOME: home } }),
+        Bun.spawn([process.execPath, script, String(n)], { env: { ...process.env, LP_BENCH_HOME: home } }),
       );
       const codes = await Promise.all(contenders.map((child) => child.exited));
       expect(codes.filter((code) => code === 0)).toHaveLength(1);

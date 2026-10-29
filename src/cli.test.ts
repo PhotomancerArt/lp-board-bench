@@ -44,7 +44,7 @@ mark = "OAK"
 mac = "02:00:00:00:00:05"
 `;
 
-describe("board (CLI over the fixture desk)", () => {
+describe("lp-bench (CLI over the fixture desk)", () => {
   test("list joins the registry with the bus: by MAC, and the bridge by its vid:pid", () => {
     const desk = setup();
     const out = desk.run("list").stdout;
@@ -80,7 +80,7 @@ describe("board (CLI over the fixture desk)", () => {
   test("sessions whose names share a prefix are different holders (direct: ota vs direct: wifi)", () => {
     const desk = setup();
     expect(desk.run("take", "fc6", "--as", "direct: ota", "--for", "usb-speedup: timing").code).toBe(0);
-    const wifi = desk.run("take", "fc6", "--for", "PR B silicon re-check", { BOARD_HOLDER: "direct: wifi" });
+    const wifi = desk.run("take", "fc6", "--for", "PR B silicon re-check", { LP_BENCH_HOLDER: "direct: wifi" });
     expect(wifi.code).toBe(3);
     expect(wifi.stderr).toContain("held by direct: ota until");
     const lease = JSON.parse(desk.run("show", "fc6", "--json").stdout).lease;
@@ -101,7 +101,8 @@ describe("board (CLI over the fixture desk)", () => {
     desk.run("take", "FS3", "--as", "ota", "--for", "soak");
     expect(desk.run("check", "fs3").code).toBe(3);
     expect(desk.run("check", "fs3", "--as", "ota").code).toBe(0);
-    expect(desk.run("check", "fs3", { BOARD_HOLDER: "ota" }).code).toBe(0);
+    expect(desk.run("check", "fs3", { LP_BENCH_HOLDER: "ota" }).code).toBe(0);
+    expect(desk.run("check", "fs3", { BOARD_HOLDER: "ota" }).code).toBe(0); // the old name still works
     expect(desk.run("check", "chk").code).toBe(4);
     expect(desk.run("check", "nope").code).toBe(5);
     const mismatch = desk.run("check", "/dev/cu.usbmodem1123201", "--as", "ota", "--chip", "esp32c6");
@@ -132,10 +133,10 @@ describe("board (CLI over the fixture desk)", () => {
       "--",
       "sh",
       "-c",
-      `echo "holder=$BOARD_HOLDER dev=$BOARD_DEV"; ${board} take fc6 --as other --for x 2>/dev/null; echo "other=$?"; exit 7`,
+      `echo "holder=$LP_BENCH_HOLDER dev=$LP_BENCH_DEV old=$BOARD_HOLDER $BOARD_DEV"; ${board} take fc6 --as other --for x 2>/dev/null; echo "other=$?"; exit 7`,
     );
     expect(result.code).toBe(7);
-    expect(result.stdout).toContain("holder=soak dev=/dev/cu.usbmodem112401");
+    expect(result.stdout).toContain("holder=soak dev=/dev/cu.usbmodem112401 old=soak /dev/cu.usbmodem112401");
     expect(result.stdout).toContain("other=3");
     expect(result.stderr).toMatch(/the run ended \(exit 7\); still yours \(\d+ min left\)/);
     const lease = JSON.parse(readFileSync(join(desk.home, "leases", "02:00:00:00:00:01.json"), "utf8"));
@@ -180,7 +181,7 @@ describe("board (CLI over the fixture desk)", () => {
     expect(off.code).toBe(0);
     expect(off.stderr).toContain(
       "FC6 fixture-c6 has no power, but macOS keeps listing it (/dev/cu.usbmodem112401, system_profiler, Web Serial) " +
-        "until power returns; board list shows it switched off",
+        "until power returns; lp-bench list shows it switched off",
     );
     expect(desk.run("list").stdout).toMatch(
       /FC6\s+fixture-c6\s.*\(switched off; stale \/dev\/cu\.usbmodem112401\)\s+1-1\.2 p4 \(\+twin\), off\s+free/,
@@ -259,7 +260,7 @@ describe("board (CLI over the fixture desk)", () => {
   test("power-cycle where uhubctl hangs after switching: the child is killed, the hub decides, and it succeeds with a warning", () => {
     const desk = setup();
     writeFileSync(join(desk.fixture, "hangs-power.txt"), "1-1.2 on\n");
-    const cycle = desk.run("power-cycle", "fc6", "--off-secs", "0", { BOARD_UHUBCTL_TIMEOUT_MS: "300" });
+    const cycle = desk.run("power-cycle", "fc6", "--off-secs", "0", { LP_BENCH_UHUBCTL_TIMEOUT_MS: "300" });
     expect(cycle.code).toBe(0);
     expect(cycle.stdout).toBe("/dev/cu.usbmodem112401\n");
     expect(cycle.stderr).toContain(
@@ -273,7 +274,7 @@ describe("board (CLI over the fixture desk)", () => {
     const desk = setup();
     expect(desk.run("power-off", "fc6").code).toBe(0);
     writeFileSync(join(desk.fixture, "hangs-power.txt"), "1-1.2 on unswitched\n1-2.2 on unswitched\n");
-    const on = desk.run("power-on", "fc6", { BOARD_UHUBCTL_TIMEOUT_MS: "300" });
+    const on = desk.run("power-on", "fc6", { LP_BENCH_UHUBCTL_TIMEOUT_MS: "300" });
     expect(on.code).toBe(1);
     expect(on.stdout).toBe("");
     expect(on.stderr).toContain(
@@ -345,7 +346,7 @@ function setup() {
       const env = args.find((arg): arg is Record<string, string> => typeof arg === "object") ?? {};
       const argv = args.filter((arg): arg is string => typeof arg === "string");
       const result = Bun.spawnSync([process.execPath, cli, ...argv], {
-        env: { PATH: process.env.PATH ?? "", HOME: home, BOARD_HOME: home, BOARD_FAKE_DESK: fixture, BOARD_SETTLE_MS: "0", BOARD_LEAVE_MS: "300", ...env },
+        env: { PATH: process.env.PATH ?? "", HOME: home, LP_BENCH_HOME: home, LP_BENCH_FAKE_DESK: fixture, LP_BENCH_SETTLE_MS: "0", LP_BENCH_LEAVE_MS: "300", ...env },
       });
       return { code: result.exitCode ?? -1, stdout: result.stdout.toString(), stderr: result.stderr.toString() };
     },

@@ -1,5 +1,5 @@
 /**
- * `board check`: what a flasher or a power switch asks before touching a
+ * `lp-bench check`: what a flasher or a power switch asks before touching a
  * board. Exit codes are the contract other tools (lp-cli) read:
  *
  *   0  free, or yours            3  held by someone else
@@ -28,7 +28,7 @@ export function checkBoard(
   deps: Deps,
 ): Verdict {
   const view = resolveRef(state, ref);
-  if (!view) return { code: EXIT.unknown, message: `no board matches "${ref}" (board list shows them)`, warnings: [] };
+  if (!view) return { code: EXIT.unknown, message: `no board matches "${ref}" (lp-bench list shows them)`, warnings: [] };
   const warnings = chipWarnings(view, probedChip);
   const name = viewName(view);
   const lease = view.lease;
@@ -38,14 +38,14 @@ export function checkBoard(
   if (view.board?.role === "art" && !lease) {
     return {
       code: EXIT.art,
-      message: `${name} is an art piece; take it on purpose first (board take ${view.board.slug} --for "<who>: <why>")`,
+      message: `${name} is an art piece; take it on purpose first (lp-bench take ${view.board.slug} --as <who> --for "<why>")`,
       warnings,
       view,
     };
   }
   if (lease) return { code: EXIT.ok, message: `${name} is yours (${describeLease(lease, deps)})`, warnings, view };
   const waiting = view.line.length > 0 ? `; ${view.line.length} waiting for it` : "";
-  const note = view.mac ? `free (not leased — board take ${view.board?.slug ?? view.mac} to hold it)` : "free";
+  const note = view.mac ? `free (not leased — lp-bench take ${view.board?.slug ?? view.mac} to hold it)` : "free";
   return { code: EXIT.ok, message: `${name} is ${note}${waiting}`, warnings, view };
 }
 

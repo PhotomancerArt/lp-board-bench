@@ -5,7 +5,7 @@
   "license": "MIT",
   "private": true,
   "type": "module",
-  "bin": { "board": "src/cli.ts" },
+  "bin": { "lp-bench": "src/cli.ts" },
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit"
