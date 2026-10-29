@@ -1,13 +1,14 @@
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import { benchEnv, type Env } from "./env.ts";
+
 /**
- * Where the desk's files live: `$BOARD_HOME`, else `~/.photomancer/desk`.
- * The repo never holds any of them.
+ * Where the desk's files live: `$LP_BENCH_HOME` (or `$BOARD_HOME`), else
+ * `~/.photomancer/desk`. The repo never holds any of them.
  */
-export function boardHome(env: Record<string, string | undefined> = process.env): string {
-  const fromEnv = env.BOARD_HOME;
-  return fromEnv && fromEnv.length > 0 ? fromEnv : join(homedir(), ".photomancer", "desk");
+export function benchHome(env: Env = process.env): string {
+  return benchEnv("HOME", env) ?? join(homedir(), ".photomancer", "desk");
 }
 
 export const registryPath = (home: string) => join(home, "boards.toml");

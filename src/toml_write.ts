@@ -6,8 +6,8 @@
  */
 
 export const HEADER = [
-  "# The desk's boards — read by `board` (github.com/PhotomancerArt/lp-board-bench).",
-  "# Hand edits are fine; `board` and its page rewrite this file and drop comments.",
+  "# The desk's boards — read by `lp-bench` (github.com/PhotomancerArt/lp-board-bench).",
+  "# Hand edits are fine; `lp-bench` and its page rewrite this file and drop comments.",
   "",
 ].join("\n");
 

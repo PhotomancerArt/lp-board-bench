@@ -1,6 +1,6 @@
 /**
  * The registry: every board on the desk (and the art pieces that come and
- * go), in `$BOARD_HOME/boards.toml`. Hand-editable; `board` and the page
+ * go), in `$LP_BENCH_HOME/boards.toml`. Hand-editable; `lp-bench` and the page
  * rewrite it under the desk lock.
  */
 import { existsSync, readFileSync } from "node:fs";

@@ -9,10 +9,11 @@
  * desk's) ignores it: `spawnSync(["sleep", "30"], { timeout: 1000 })` returns
  * after 30 s. `Bun.spawn` and `node:child_process` ignore theirs too.
  */
+import { benchEnv } from "../env.ts";
 import { DeskError } from "./desk_error.ts";
 
-/** How long a uhubctl run gets. `$BOARD_UHUBCTL_TIMEOUT_MS` overrides it. */
-export const uhubctlTimeoutMs = () => Number(process.env.BOARD_UHUBCTL_TIMEOUT_MS ?? 20_000);
+/** How long a uhubctl run gets. `$LP_BENCH_UHUBCTL_TIMEOUT_MS` overrides it. */
+export const uhubctlTimeoutMs = () => Number(benchEnv("UHUBCTL_TIMEOUT_MS") ?? 20_000);
 
 /** How long a child gets to exit on SIGTERM before SIGKILL. */
 const KILL_GRACE_MS = 2_000;

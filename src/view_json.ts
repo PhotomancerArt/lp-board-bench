@@ -1,5 +1,5 @@
 /**
- * One board as JSON: what `board list --json` prints and what the page
+ * One board as JSON: what `lp-bench list --json` prints and what the page
  * reads. Other tools (lp-cli) parse it, so fields are only ever added.
  */
 import { vidPid } from "./desk/presence.ts";

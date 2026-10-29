@@ -1,6 +1,6 @@
 /**
- * `$BOARD_HOME/hub-twins.toml`: twins named by hand, for a hub tree the twin
- * rule (`findTwin` in `desk/hubs.ts`) cannot pair. Hand-written only; `board`
+ * `$LP_BENCH_HOME/hub-twins.toml`: twins named by hand, for a hub tree the twin
+ * rule (`findTwin` in `desk/hubs.ts`) cannot pair. Hand-written only; `lp-bench`
  * never rewrites it.
  *
  *     "1-1.3.1" = "1-2.3"     # this USB 2 hub's USB 3 twin

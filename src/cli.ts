@@ -1,44 +1,47 @@
 #!/usr/bin/env bun
 /**
- * `board` — the desk's boards, who holds them, and who is waiting.
- * Run `board help` for the commands.
+ * `lp-bench` — the desk's boards, who holds them, and who is waiting.
+ * Run `lp-bench help` for the commands.
  */
 import { parseArgs } from "node:util";
 
 import { checkBoard, chipWarnings, EXIT } from "./check.ts";
 import { realDeps, type Deps } from "./deps.ts";
 import { deskFromEnv, type Desk } from "./desk/desk.ts";
+import { benchEnv, bothNames } from "./env.ts";
 import { describeLease, drop, LeaseError, renew, settle, take, timeLeft } from "./lease.ts";
 import { normalizeMac } from "./mac.ts";
-import { boardHome } from "./paths.ts";
+import { benchHome } from "./paths.ts";
 import { power, type PowerAction } from "./power.ts";
 import { boardFromInput, editRegistry, handle, RegistryError, type Board } from "./registry.ts";
 import { buildState, resolveRef, viewName, type BoardView, type DeskState } from "./state.ts";
 import { stateJson, viewJson } from "./view_json.ts";
 import { joinLine, leaveLine } from "./waiting.ts";
 
-const HELP = `board — the desk's boards, who holds them, and who is waiting
+const HELP = `lp-bench — the desk's boards, who holds them, and who is waiting
 
-  board list [--json]                       every board: mark, slug, role, port, hub, holder, line
-  board show <board> [--json]               one board in full
-  board take <board> --as <who> --for "<why>"   lease it (30 min); prints its port
-        [--minutes N] [--pid N] [--wait [--timeout MIN]]   (--pid: ends when that process does, no grace)
-  board run <board> --as <who> --for "<why>" [--grace 10] [--minutes N] [--wait] -- <command…>
-                                            hold it while the command runs, then for the grace (minutes)
-  board renew <board> [--minutes N] [--as <who>]
-  board drop <board> [--as <who>] [--force]
-  board check <board|/dev/port> [--as <who>] [--chip <probed>]
-                                            0 free or yours, 3 held, 4 art not held by you, 5 unknown
-  board set <board> key=value…              edit the registry (tags=a,b; key= clears it)
-  board add --slug <s> --mark <M> (--port <p> | --mac <MAC>) [--role r] [--board "…"]
-        [--name "…"] [--lp-board <id>]      register a board (--port probes it with espflash)
-  board verify <board> [--as <who>]         espflash vs the registry
-  board power-cycle|power-off|power-on <board> [--as <who>] [--off-secs N]
-  board serve [--port 4380]                 the desk page on 127.0.0.1
+  lp-bench list [--json]                       every board: mark, slug, role, port, hub, holder, line
+  lp-bench show <board> [--json]               one board in full
+  lp-bench take <board> --as <who> --for "<why>"   lease it (30 min); prints its port
+           [--minutes N] [--pid N] [--wait [--timeout MIN]]   (--pid: ends when that process does, no grace)
+  lp-bench run <board> --as <who> --for "<why>" [--grace 10] [--minutes N] [--wait] -- <command…>
+                                               hold it while the command runs, then for the grace (minutes)
+  lp-bench renew <board> [--minutes N] [--as <who>]
+  lp-bench drop <board> [--as <who>] [--force]
+  lp-bench check <board|/dev/port> [--as <who>] [--chip <probed>]
+                                               0 free or yours, 3 held, 4 art not held by you, 5 unknown
+  lp-bench set <board> key=value…              edit the registry (tags=a,b; key= clears it)
+  lp-bench add --slug <s> --mark <M> (--port <p> | --mac <MAC>) [--role r] [--board "…"]
+           [--name "…"] [--lp-board <id>]      register a board (--port probes it with espflash)
+  lp-bench verify <board> [--as <who>]         espflash vs the registry
+  lp-bench power-cycle|power-off|power-on <board> [--as <who>] [--off-secs N]
+  lp-bench serve [--port 4380]                 the desk page on 127.0.0.1
 
 <board> is a slug (fixture-c6), a mark (FC6), a MAC, or a /dev path.
-Who you are: --as <who>, else $BOARD_HOLDER — your whole session name, colons
-and all ("direct: wifi"). --for is only why. Files: $BOARD_HOME (~/.photomancer/desk).`;
+Who you are: --as <who>, else $LP_BENCH_HOLDER — your whole session name,
+colons and all ("direct: wifi"). --for is only why.
+Files: $LP_BENCH_HOME (~/.photomancer/desk).
+The old BOARD_* names (BOARD_HOLDER, BOARD_HOME, …) still work.`;
 
 class UsageError extends Error {}
 
@@ -54,7 +57,7 @@ class Refusal extends Error {
 
 export async function main(argv: string[], env = process.env, deps: Deps = realDeps): Promise<number> {
   const [command, ...rest] = argv;
-  const home = boardHome(env);
+  const home = benchHome(env);
   const desk = deskFromEnv(env);
   try {
     switch (command) {
@@ -105,7 +108,7 @@ export async function main(argv: string[], env = process.env, deps: Deps = realD
       return EXIT.error;
     }
     if (err instanceof LeaseError || err instanceof RegistryError || err instanceof Error) {
-      console.error(`board: ${err.message}`);
+      console.error(`lp-bench: ${err.message}`);
       return EXIT.error;
     }
     throw err;
@@ -183,15 +186,16 @@ async function takeCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Pro
   return EXIT.ok;
 }
 
-/** How often `board run` renews its lease while the command runs. */
+/** How often `lp-bench run` renews its lease while the command runs. */
 const RUN_RENEW_MS = 60_000;
 
 /**
- * `board run <board> --for "<who>: <why>" [--grace M] -- <command…>`: hold the
+ * `lp-bench run <board> --as <who> --for "<why>" [--grace M] -- <command…>`: hold the
  * board for as long as the command runs (renewed every minute, so no expiry
  * mid-run), then keep it for the grace period so the holder can look at what
- * the run left behind. The command gets BOARD_HOLDER (so `just` recipes inside
- * pass their own lease check) and BOARD_DEV (the board's port).
+ * the run left behind. The command gets LP_BENCH_HOLDER (so `just` recipes inside
+ * pass their own lease check) and LP_BENCH_DEV (the board's port), each also
+ * under its old BOARD_ name for the callers that still read that.
  */
 async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.ProcessEnv, args: string[]): Promise<number> {
   const { values, positionals } = parse(args, {
@@ -204,7 +208,7 @@ async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Proc
   });
   const holder = mustSayWho(values.as, env, "run");
   const [ref, ...command] = positionals;
-  if (!ref || command.length === 0) throw new UsageError('usage: board run <board> --as <who> --for "<why>" -- <command…>');
+  if (!ref || command.length === 0) throw new UsageError('usage: lp-bench run <board> --as <who> --for "<why>" -- <command…>');
   const minutes = values.minutes ? number(values.minutes, "--minutes") : 30;
   const grace = values.grace ? number(values.grace, "--grace") : 10;
   const { view, name, mac } = await acquire(home, desk, deps, ref, holder, values.for ?? "", {
@@ -218,7 +222,11 @@ async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Proc
 
   const child = Bun.spawn(command, {
     stdio: ["inherit", "inherit", "inherit"],
-    env: { ...process.env, BOARD_HOLDER: holder, ...(view?.device?.port ? { BOARD_DEV: view.device.port } : {}) },
+    env: {
+      ...process.env,
+      ...bothNames("HOLDER", holder),
+      ...(view?.device?.port ? bothNames("DEV", view.device.port) : {}),
+    },
   });
   const forward = (signal: NodeJS.Signals) => () => child.kill(signal);
   const onInt = forward("SIGINT");
@@ -229,7 +237,7 @@ async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Proc
     try {
       renew(home, mac, holder, minutes, deps);
     } catch (err) {
-      console.error(`board run: could not renew ${name}: ${(err as Error).message}`);
+      console.error(`lp-bench run: could not renew ${name}: ${(err as Error).message}`);
     }
   }, RUN_RENEW_MS);
   const code = await child.exited;
@@ -240,7 +248,7 @@ async function runCommand(home: string, desk: Desk, deps: Deps, env: NodeJS.Proc
   const kept = settle(home, mac, holder, grace, deps);
   console.error(
     kept
-      ? `${name}: the run ended (exit ${code}); still yours (${timeLeft(kept, deps)}) — board drop ${view?.board?.slug ?? mac} --as ${holder} to free it now`
+      ? `${name}: the run ended (exit ${code}); still yours (${timeLeft(kept, deps)}) — lp-bench drop ${view?.board?.slug ?? mac} --as ${holder} to free it now`
       : `${name}: the run ended (exit ${code}); released`,
   );
   return code;
@@ -268,7 +276,7 @@ async function acquire(
   const mac = view?.mac ?? normalizeMac(ref);
   if (!mac) {
     throw new Refusal(
-      view ? `${viewName(view)} has no MAC to lease it by; register it (board add)` : `no board matches "${ref}"`,
+      view ? `${viewName(view)} has no MAC to lease it by; register it (lp-bench add)` : `no board matches "${ref}"`,
       EXIT.unknown,
     );
   }
@@ -298,16 +306,17 @@ async function acquire(
 }
 
 /**
- * Who is taking a board: `--as`, else $BOARD_HOLDER — never parsed out of
- * `--for`. Session names carry colons ("direct: wifi", "direct: ota"), so a
- * "<who>: <why>" split once made every director the same holder `direct`,
- * and a take by one would have renewed — taken over — another's lease.
+ * Who is taking a board: `--as`, else $LP_BENCH_HOLDER (or $BOARD_HOLDER) —
+ * never parsed out of `--for`. Session names carry colons ("direct: wifi",
+ * "direct: ota"), so a "<who>: <why>" split once made every director the same
+ * holder `direct`, and a take by one would have renewed — taken over —
+ * another's lease.
  */
 function mustSayWho(as: string | undefined, env: NodeJS.ProcessEnv, verb: string): string {
-  const holder = (as ?? env.BOARD_HOLDER ?? "").trim();
+  const holder = (as ?? benchEnv("HOLDER", env) ?? "").trim();
   if (!holder) {
     throw new UsageError(
-      `${verb} needs to know who you are: --as "<your session name>" (or BOARD_HOLDER=…); --for is only why`,
+      `${verb} needs to know who you are: --as "<your session name>" (or LP_BENCH_HOLDER=…); --for is only why`,
     );
   }
   return holder;
@@ -491,7 +500,7 @@ async function powerCommand(
   if (action === "off" && view.device) {
     console.error(
       `${viewName(view)} has no power, but macOS keeps listing it (${view.device.port}, system_profiler, Web Serial) ` +
-        "until power returns; board list shows it switched off",
+        "until power returns; lp-bench list shows it switched off",
     );
   }
   if (action !== "off") {
@@ -525,13 +534,13 @@ function number(text: string, flag: string): number {
 }
 
 function who(as: string | undefined, env: NodeJS.ProcessEnv): string | undefined {
-  return as ?? (env.BOARD_HOLDER || undefined);
+  return as ?? benchEnv("HOLDER", env);
 }
 
 function mustResolve(state: DeskState, ref: string | undefined): BoardView {
   const text = need(ref, "<command> <board>");
   const view = resolveRef(state, text);
-  if (!view) throw new Refusal(`no board matches "${text}" (board list shows them)`, EXIT.unknown);
+  if (!view) throw new Refusal(`no board matches "${text}" (lp-bench list shows them)`, EXIT.unknown);
   return view;
 }
 

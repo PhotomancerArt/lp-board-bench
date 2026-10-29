@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The desk page as a standing service: a launchd user agent that runs the
-# installed `board serve` at login and restarts it if it dies.
+# installed `lp-bench serve` at login and restarts it if it dies.
 #
 #   service/service.sh install     render the agent, (re)start it, wait until the page answers
 #   service/service.sh uninstall   stop it and remove the agent
@@ -8,7 +8,8 @@
 #   service/service.sh status      is it loaded, its pid, does the page answer
 #   service/service.sh logs        follow its log
 #
-# macOS only. BOARD_HOME and BOARD_PORT override the defaults.
+# macOS only. LP_BENCH_HOME and LP_BENCH_PORT (or the old BOARD_HOME and
+# BOARD_PORT) override the defaults.
 set -euo pipefail
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -16,10 +17,10 @@ label="com.photomancer.board-bench"
 domain="gui/$(id -u)"
 agents_dir="$HOME/Library/LaunchAgents"
 plist="$agents_dir/$label.plist"
-bin="$HOME/.local/bin/board"
-board_home="${BOARD_HOME:-$HOME/.photomancer/desk}"
-port="${BOARD_PORT:-4380}"
-log="$board_home/log/serve.log"
+bin="$HOME/.local/bin/lp-bench"
+bench_home="${LP_BENCH_HOME:-${BOARD_HOME:-$HOME/.photomancer/desk}}"
+port="${LP_BENCH_PORT:-${BOARD_PORT:-4380}}"
+log="$bench_home/log/serve.log"
 url="http://127.0.0.1:$port/"
 
 loaded() { launchctl print "$domain/$label" >/dev/null 2>&1; }
@@ -38,14 +39,14 @@ wait_until_answering() {
 cmd_install() {
   [[ "$(uname)" == Darwin ]] || { echo "service: launchd is macOS only" >&2; exit 1; }
   [[ -x "$bin" ]] || { echo "service: $bin is missing; run \`just install\` first" >&2; exit 1; }
-  # A hand-run `board serve` on the port would keep the agent crash-looping.
+  # A hand-run `lp-bench serve` on the port would keep the agent crash-looping.
   if ! loaded && lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
-    echo "service: something else is listening on :$port (a hand-run board serve?); stop it first:" >&2
+    echo "service: something else is listening on :$port (a hand-run lp-bench serve?); stop it first:" >&2
     lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null >&2 || true
     exit 1
   fi
-  mkdir -p "$agents_dir" "$board_home/log"
-  sed -e "s|@BIN@|$bin|g" -e "s|@HOME@|$HOME|g" -e "s|@BOARD_HOME@|$board_home|g" -e "s|@PORT@|$port|g" \
+  mkdir -p "$agents_dir" "$bench_home/log"
+  sed -e "s|@BIN@|$bin|g" -e "s|@HOME@|$HOME|g" -e "s|@BENCH_HOME@|$bench_home|g" -e "s|@PORT@|$port|g" \
     "$here/$label.plist.tmpl" >"$plist"
   plutil -lint "$plist" >/dev/null
   launchctl bootout "$domain/$label" >/dev/null 2>&1 || true

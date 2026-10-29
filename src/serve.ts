@@ -1,9 +1,9 @@
 /**
- * `board serve`: the desk page, on 127.0.0.1 only. The page reads the same
- * state `board list --json` prints, and its buttons call the same functions
+ * `lp-bench serve`: the desk page, on 127.0.0.1 only. The page reads the same
+ * state `lp-bench list --json` prints, and its buttons call the same functions
  * the CLI does — there is no logic here the CLI lacks.
  *
- * The page and its script are embedded as text, so the compiled `board`
+ * The page and its script are embedded as text, so the compiled `lp-bench`
  * binary serves them with no files beside it.
  */
 import { existsSync, readFileSync } from "node:fs";
@@ -42,7 +42,7 @@ export async function serve(home: string, desk: Desk, deps: Deps, args: string[]
   try {
     server = Bun.serve({ hostname: "127.0.0.1", port, fetch: handler });
   } catch (err) {
-    console.error(`board serve: port ${port} is taken (${(err as Error).message}); is the page already running?`);
+    console.error(`lp-bench serve: port ${port} is taken (${(err as Error).message}); is the page already running?`);
     return EXIT.error;
   }
   console.log(`the desk page: http://127.0.0.1:${server.port}/`);

@@ -1,35 +1,37 @@
 # AGENTS.md — lp-board-bench
 
-`board` keeps a desk's board registry, short leases, the line for each board,
+`lp-bench` keeps a desk's board registry, short leases, the line for each board,
 hub power, and a local page. Read `README.md` first; this file is the rules.
 
 ## Using the desk (any repo, any agent)
 
 - **Lease before you flash, probe, reset or power-cycle a board**:
-  `board take <slug> --as "<your session name>" --for "<why>"` (or
-  `board run <slug> --as … --for … -- <cmd>` for a long run). Identity is
-  `--as` or `$BOARD_HOLDER` only, never parsed out of `--for`. Drop it when done. A refusal names
-  the holder: wait (`--wait`), or ask them; never work around it.
+  `lp-bench take <slug> --as "<your session name>" --for "<why>"` (or
+  `lp-bench run <slug> --as … --for … -- <cmd>` for a long run). Identity is
+  `--as` or `$LP_BENCH_HOLDER` only, never parsed out of `--for`. Drop it
+  when done. A refusal names the holder: wait (`--wait`), or ask them; never
+  work around it. (It was `board` until October 2026; that name and the old
+  `BOARD_*` variables still work.)
 - **Say `MARK slug`** (`FC6 fixture-c6`) when you talk about a board, and
   identify boards by MAC + chip, never by hub port or `/dev` name — both move.
-- Power goes through `board power-*` only. Never hand-run `uhubctl` against a
+- Power goes through `lp-bench power-*` only. Never hand-run `uhubctl` against a
   board you do not hold.
 
 ## Working on this repo
 
 - **No desk data in the repo.** It is public. Real MACs, art-piece names and
-  desk notes live in `$BOARD_HOME`. Fixtures use made-up, locally administered
+  desk notes live in `$LP_BENCH_HOME`. Fixtures use made-up, locally administered
   MACs (`02:00:00:00:00:0N`); scrub any new capture the same way.
 - **Zero runtime dependencies.** Bun gives the server, the TOML parser and the
   single-binary build. Dev dependencies (typescript, bun types) only.
 - **The core takes its effects injected**: clock and pid liveness (`Deps`), the
   desk (`Desk`: presence, hubs, espflash, power). Tests never sleep for an
-  expiry and never touch real hardware; `BOARD_FAKE_DESK=<dir>` runs the CLI
+  expiry and never touch real hardware; `LP_BENCH_FAKE_DESK=<dir>` runs the CLI
   over fixtures.
 - **The page has no logic the CLI lacks.** Its endpoints call the same
   functions; add a feature to the core first.
-- **`board list --json` is read by other tools** (LightPlayer's lp-cli). Only
-  ever add fields. `board check`'s exit codes are a contract too.
+- **`lp-bench list --json` is read by other tools** (LightPlayer's lp-cli). Only
+  ever add fields. `lp-bench check`'s exit codes are a contract too.
 - **Hardware truths are measured, then written down** (README "How power
   cycling knows"): the hub is the witness for power, not the host.
 - One concept per file, named for it (`lease.ts`, `desk/hubs.ts`). Tests sit
